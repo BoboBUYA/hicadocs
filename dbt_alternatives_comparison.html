@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>dbt Alternatives — Comparison</title>
+<style>
+  :root{
+    --bg: #f6f5f1;
+    --panel: #ffffff;
+    --ink: #1c2321;
+    --muted: #5b6660;
+    --line: #dedad0;
+    --accent: #ff5a36;
+    --accent-soft: #ffe3d8;
+    --pipe: #2f6f5e;
+    --high: #b5651d;
+    --med: #b8860b;
+    --low: #2f6f5e;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family: "IBM Plex Sans", "Segoe UI", Arial, sans-serif;
+    line-height:1.6;
+    padding:48px 24px 90px;
+  }
+  .wrap{ max-width:1180px; margin:0 auto; }
+
+  .kicker{
+    font-family:"IBM Plex Mono", monospace; color:var(--accent); font-size:12px;
+    letter-spacing:.14em; text-transform:uppercase; margin-bottom:10px;
+  }
+  h1{ font-size:32px; margin:0 0 6px; letter-spacing:-0.01em; }
+  .subtitle{ color:var(--muted); font-size:15px; margin-bottom:32px; max-width:700px; }
+
+  .table-scroll{
+    overflow-x:auto;
+    border:1px solid var(--line);
+    border-radius:10px;
+    background:var(--panel);
+  }
+  table{
+    width:100%;
+    border-collapse:collapse;
+    font-size:13.5px;
+    min-width:1100px;
+  }
+  th, td{
+    text-align:left;
+    padding:14px 16px;
+    border-bottom:1px solid var(--line);
+    vertical-align:top;
+  }
+  th{
+    font-family:"IBM Plex Mono", monospace;
+    font-size:11px;
+    letter-spacing:.06em;
+    text-transform:uppercase;
+    color:var(--muted);
+    background:#fbfaf7;
+    position:sticky;
+    top:0;
+  }
+  tr:last-child td{ border-bottom:none; }
+  tr:hover td{ background:#fbfaf7; }
+
+  td.name{
+    font-weight:600;
+    white-space:nowrap;
+  }
+  td.desc{ color:var(--muted); max-width:180px; }
+
+  ul.cell{ margin:0; padding-left:16px; }
+  ul.cell li{ margin-bottom:4px; }
+
+  .badge{
+    display:inline-block;
+    font-family:"IBM Plex Mono", monospace;
+    font-size:10.5px;
+    letter-spacing:.05em;
+    text-transform:uppercase;
+    padding:3px 9px;
+    border-radius:20px;
+    color:#fff;
+    white-space:nowrap;
+  }
+  .badge.high{ background:var(--high); }
+  .badge.medium{ background:var(--med); }
+  .badge.low{ background:var(--low); }
+
+  .friendliness{
+    font-size:12.5px;
+    color:var(--muted);
+  }
+
+  .callout{
+    border:1px solid var(--line); border-left:3px solid var(--accent); background:var(--panel);
+    padding:14px 16px; border-radius:6px; font-size:14px; margin-top:26px; max-width:900px;
+  }
+  .callout .lbl{
+    font-family:"IBM Plex Mono", monospace; font-size:11px; text-transform:uppercase;
+    letter-spacing:.08em; color:var(--accent); margin-bottom:6px; display:block;
+  }
+
+  footer{
+    color:var(--muted); font-size:12px; font-family:"IBM Plex Mono", monospace;
+    margin-top:30px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="kicker">Reference · dbt vs Alternatives</div>
+  <h1>dbt Alternatives — 2026 Comparison</h1>
+  <div class="subtitle">Transformation tools and platforms compared on description, trade-offs, coding depth, and who they're best suited for.</div>
+
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Description</th>
+          <th>Pros</th>
+          <th>Cons</th>
+          <th>Coding Level</th>
+          <th>User-Friendliness</th>
+          <th>Best For</th>
+        </tr>
+      </thead>
+      <tbody>
+
+        <tr>
+          <td class="name">dbt<br><span class="friendliness">(baseline)</span></td>
+          <td class="desc">Open-source SQL transformation tool; models, tests, docs, version control via Git</td>
+          <td>
+            <ul class="cell">
+              <li>Largest community &amp; talent pool</li>
+              <li>Huge package ecosystem</li>
+              <li>Free open-source core</li>
+              <li>Faster Rust-based Fusion engine</li>
+            </ul>
+          </td>
+          <td>
+            <ul class="cell">
+              <li>Limited real-time/streaming support</li>
+              <li>No native ingestion or orchestration</li>
+              <li>Steep learning curve (Git, YAML, Jinja)</li>
+            </ul>
+          </td>
+          <td><span class="badge high">High</span><div class="friendliness">SQL + Jinja + YAML + Git</div></td>
+          <td>Medium — needs Git/YAML/Jinja fluency</td>
+          <td>Teams with dedicated analytics engineers wanting the biggest ecosystem</td>
+        </tr>
+
+        <tr>
+          <td class="name">SQLMesh</td>
+          <td class="desc">dbt-compatible SQL transformation framework, now under Linux Foundation governance</td>
+          <td>
+            <ul class="cell">
+              <li>Virtual dev environments, no warehouse compute needed</li>
+              <li>Built-in state tracking &amp; change detection</li>
+              <li>Compile-time error catching</li>
+              <li>~9x faster execution than dbt Core</li>
+              <li>dbt-compatible — minimal migration effort</li>
+            </ul>
+          </td>
+          <td>
+            <ul class="cell">
+              <li>Smaller ecosystem/package community than dbt</li>
+              <li>Learning curve for its environment model</li>
+            </ul>
+          </td>
+          <td><span class="badge high">High</span><div class="friendliness">SQL + optional Python + env model</div></td>
+          <td>Medium — SQL-first, dbt-like with its own concepts</td>
+          <td>Analytics engineers wanting dbt's philosophy, faster iteration, no Fivetran lock-in</td>
+        </tr>
+
+        <tr>
+          <td class="name">Dataform</td>
+          <td class="desc">Google-owned, BigQuery-native transformation tool</td>
+          <td>
+            <ul class="cell">
+              <li>Tightly integrated into BigQuery</li>
+              <li>Closest dbt alternative for GCP-native teams</li>
+            </ul>
+          </td>
+          <td>
+            <ul class="cell">
+              <li>Locked to Google Cloud ecosystem</li>
+            </ul>
+          </td>
+          <td><span class="badge high">High</span><div class="friendliness">SQL + JavaScript templating</div></td>
+          <td>Medium — similar SQL-first workflow to dbt</td>
+          <td>GCP / BigQuery-native teams</td>
+        </tr>
+
+        <tr>
+          <td class="name">Coalesce</td>
+          <td class="desc">SQL transformation tool blending visual and code-based workflows</td>
+          <td>
+            <ul class="cell">
+              <li>Stays in familiar territory for analytics engineers</li>
+              <li>Not locked to Fivetran</li>
+            </ul>
+          </td>
+          <td>
+            <ul class="cell">
+              <li>Newer, smaller community than dbt</li>
+            </ul>
+          </td>
+          <td><span class="badge medium">Medium</span><div class="friendliness">SQL knowledge + visual graph</div></td>
+          <td>Medium-High — visual + code hybrid</td>
+          <td>Teams wanting dbt-like control with more visual tooling</td>
+        </tr>
+
+        <tr>
+          <td class="name">Matillion</td>
+          <td class="desc">Visual, drag-and-drop cloud-native ETL/ELT tool</td>
+          <td>
+            <ul class="cell">
+              <li>Visual, drag-and-drop canvas</li>
+              <li>Supports Snowflake, Databricks, BigQuery, Redshift</li>
+              <li>Makes complex pipelines more visible/manageable</li>
+            </ul>
+          </td>
+          <td>
+            <ul class="cell">
+              <li>Still needs separate ingestion tooling</li>
+              <li>Transformation/orchestration layer only, not end-to-end</li>
+            </ul>
+          </td>
+          <td><span class="badge medium">Low–Medium</span><div class="friendliness">Mostly visual, occasional SQL</div></td>
+          <td>High — built for engineers who prefer visual builds</td>
+          <td>Teams wanting visual pipeline building without going fully no-code</td>
+        </tr>
+
+        <tr>
+          <td class="name">Airbyte</td>
+          <td class="desc">Open-source data ingestion tool (not primarily transformation)</td>
+          <td>
+            <ul class="cell">
+              <li>300+ pre-built connectors</li>
+              <li>Open-source, free self-hosted or Cloud option</li>
+              <li>Reliable at moving data A → B at scale</li>
+            </ul>
+          </td>
+          <td>
+            <ul class="cell">
+              <li>Transformation isn't its strength</li>
+              <li>Basic transforms only via dbt integration</li>
+            </ul>
+          </td>
+          <td><span class="badge low">Low</span><div class="friendliness">Mostly config-based</div></td>
+          <td>High for ingestion, N/A for transformation</td>
+          <td>Pairing with SQLMesh/dbt to fill the ingestion gap</td>
+        </tr>
+
+        <tr>
+          <td class="name">Dagster</td>
+          <td class="desc">Data orchestration platform, often used to run dbt</td>
+          <td>
+            <ul class="cell">
+              <li>Manages end-to-end data pipelines</li>
+              <li>dbt commonly used as the transformation layer within it</li>
+            </ul>
+          </td>
+          <td>
+            <ul class="cell">
+              <li>Adds an extra tool/layer on top of dbt or SQLMesh</li>
+            </ul>
+          </td>
+          <td><span class="badge high">High</span><div class="friendliness">Python-based orchestration code</div></td>
+          <td>Medium — Python-based, engineering-oriented</td>
+          <td>Teams needing scheduling/monitoring around dbt or SQLMesh</td>
+        </tr>
+
+        <tr>
+          <td class="name">Alteryx</td>
+          <td class="desc">No-code visual analytics/data prep platform</td>
+          <td>
+            <ul class="cell">
+              <li>Code-free advanced analytics</li>
+              <li>Flexible pipeline design without SQL or Python</li>
+            </ul>
+          </td>
+          <td>
+            <ul class="cell">
+              <li>Not warehouse-native</li>
+              <li>Can get costly at scale</li>
+              <li>Less version-control discipline than dbt/SQLMesh</li>
+            </ul>
+          </td>
+          <td><span class="badge low">None–Low</span><div class="friendliness">Fully drag-and-drop</div></td>
+          <td>Very High — built for business analysts</td>
+          <td>Non-engineers who want to skip SQL entirely</td>
+        </tr>
+
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout">
+    <span class="lbl">Quick read</span>
+    dbt, SQLMesh, and Dataform sit at similar coding levels since they're all SQL-first with extra templating/config layers — that's why SQLMesh is the easiest "next step" for a dbt-trained audience. Matillion and Alteryx trade coding depth for visual accessibility, which matters if some trainees are M&amp;E officers rather than data engineers.
+  </div>
+
+  <footer>REFERENCE TABLE — dbt ALTERNATIVES, 2026</footer>
+</div>
+</body>
+</html>

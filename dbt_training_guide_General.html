@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>dbt Modeling Training Guide</title>
+<style>
+  :root{
+    --bg: #f6f5f1;
+    --panel: #ffffff;
+    --ink: #1c2321;
+    --muted: #5b6660;
+    --line: #dedad0;
+    --code-bg: #16201d;
+    --code-ink: #d8f3dc;
+    --accent: #ff5a36;   /* dbt-adjacent ember */
+    --accent-soft: #ffe3d8;
+    --pipe: #2f6f5e;     /* pipeline teal */
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family: "IBM Plex Sans", "Segoe UI", Arial, sans-serif;
+    line-height:1.6;
+  }
+  @media print{
+    aside{display:none;}
+    .layout{grid-template-columns: 1fr;}
+  }
+
+  .layout{
+    display:grid;
+    grid-template-columns: 260px 1fr;
+    max-width:1200px;
+    margin:0 auto;
+    min-height:100vh;
+  }
+
+  aside{
+    border-right:1px solid var(--line);
+    padding:32px 20px;
+    position:sticky;
+    top:0;
+    align-self:start;
+    height:100vh;
+    overflow-y:auto;
+  }
+  aside .tag{
+    font-family: "IBM Plex Mono", monospace;
+    font-size:11px;
+    letter-spacing:.12em;
+    text-transform:uppercase;
+    color:var(--pipe);
+    margin-bottom:6px;
+  }
+  aside h1{
+    font-size:19px;
+    margin:0 0 24px;
+    line-height:1.3;
+  }
+  aside nav a{
+    display:block;
+    font-size:13.5px;
+    color:var(--muted);
+    text-decoration:none;
+    padding:6px 0;
+    border-left:2px solid transparent;
+    padding-left:10px;
+    margin-left:-10px;
+    transition: color .15s, border-color .15s;
+  }
+  aside nav a:hover, aside nav a.active{
+    color:var(--ink);
+    border-left-color:var(--accent);
+  }
+
+  main{
+    padding:56px 64px 100px;
+    max-width:760px;
+  }
+
+  .kicker{
+    font-family:"IBM Plex Mono", monospace;
+    color:var(--accent);
+    font-size:12px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    margin-bottom:10px;
+  }
+  h1.title{
+    font-size:38px;
+    margin:0 0 6px;
+    letter-spacing:-0.01em;
+  }
+  .subtitle{
+    color:var(--muted);
+    font-size:16px;
+    margin-bottom:40px;
+  }
+
+  section{
+    margin-bottom:52px;
+    scroll-margin-top:24px;
+  }
+  section h2{
+    font-size:22px;
+    display:flex;
+    align-items:baseline;
+    gap:10px;
+    border-bottom:1px solid var(--line);
+    padding-bottom:10px;
+    margin-bottom:18px;
+  }
+  section h2 .num{
+    font-family:"IBM Plex Mono", monospace;
+    font-size:13px;
+    color:var(--accent);
+    font-weight:600;
+  }
+  h3{
+    font-size:16px;
+    margin:24px 0 10px;
+  }
+  p{margin:0 0 14px;}
+  ul, ol{padding-left:20px; margin:0 0 14px;}
+  li{margin-bottom:6px;}
+
+  strong{color:var(--ink);}
+
+  code{
+    font-family:"IBM Plex Mono", monospace;
+    font-size:0.85em;
+    background:var(--accent-soft);
+    padding:2px 5px;
+    border-radius:4px;
+  }
+
+  pre{
+    background:var(--code-bg);
+    color:var(--code-ink);
+    border-radius:8px;
+    padding:16px 18px;
+    overflow-x:auto;
+    font-family:"IBM Plex Mono", monospace;
+    font-size:13px;
+    line-height:1.55;
+    margin:0 0 18px;
+    position:relative;
+    border-left:3px solid var(--pipe);
+  }
+  pre code{
+    background:none;
+    padding:0;
+    color:inherit;
+  }
+  pre .comment{ color:#7fa08f; }
+
+  table{
+    width:100%;
+    border-collapse:collapse;
+    margin-bottom:18px;
+    font-size:14px;
+  }
+  th, td{
+    text-align:left;
+    padding:9px 12px;
+    border-bottom:1px solid var(--line);
+  }
+  th{
+    font-family:"IBM Plex Mono", monospace;
+    font-size:11px;
+    letter-spacing:.06em;
+    text-transform:uppercase;
+    color:var(--muted);
+  }
+  td code{background:transparent;padding:0;}
+
+  .callout{
+    border:1px solid var(--line);
+    border-left:3px solid var(--accent);
+    background:var(--panel);
+    padding:14px 16px;
+    border-radius:6px;
+    font-size:14px;
+    margin-bottom:18px;
+  }
+  .callout .lbl{
+    font-family:"IBM Plex Mono", monospace;
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+    color:var(--accent);
+    margin-bottom:6px;
+    display:block;
+  }
+
+  .flow{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    margin-bottom:18px;
+  }
+  .flow-step{
+    display:flex;
+    align-items:flex-start;
+    gap:12px;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:10px 14px;
+  }
+  .flow-step .n{
+    font-family:"IBM Plex Mono", monospace;
+    font-size:12px;
+    color:#fff;
+    background:var(--pipe);
+    width:22px;height:22px;
+    display:flex;align-items:center;justify-content:center;
+    border-radius:50%;
+    flex-shrink:0;
+    margin-top:2px;
+  }
+
+  footer{
+    color:var(--muted);
+    font-size:12px;
+    font-family:"IBM Plex Mono", monospace;
+    border-top:1px solid var(--line);
+    padding-top:16px;
+    margin-top:40px;
+  }
+
+  @media (max-width: 860px){
+    .layout{grid-template-columns: 1fr;}
+    aside{position:relative; height:auto; border-right:none; border-bottom:1px solid var(--line);}
+    main{padding:32px 24px 80px;}
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+
+  <aside>
+    <div class="tag">Live training</div>
+    <h1>dbt Modeling<br>Guide</h1>
+    <nav id="toc">
+      <a href="#intro">Introduction</a>
+      <a href="#prereq">Prerequisites</a>
+      <a href="#install">Installing dbt</a>
+      <a href="#setup">First Project</a>
+      <a href="#structure">Project Structure</a>
+      <a href="#model">Creating a Model</a>
+      <a href="#run">Running Models</a>
+      <a href="#test">Testing</a>
+      <a href="#docs">Documentation</a>
+      <a href="#cheatsheet">Command Cheat Sheet</a>
+      <a href="#demoflow">Live Demo Flow</a>
+      <a href="#pitfalls">Common Pitfalls</a>
+    </nav>
+  </aside>
+
+  <main>
+    <div class="kicker">Session Handout</div>
+    <h1 class="title">dbt Modeling Training Guide</h1>
+    <div class="subtitle">From installation to running your first model — with copy‑pasteable commands throughout.</div>
+
+    <section id="intro">
+      <h2><span class="num">01</span> Introduction</h2>
+      <p><strong>dbt (data build tool)</strong> lets analysts and engineers transform data already loaded into a warehouse, using plain SQL <code>SELECT</code> statements. dbt handles the boilerplate — turning SQL into tables or views, managing dependencies, testing, and documentation.</p>
+      <div class="callout">
+        <span class="lbl">What you'll learn today</span>
+        Installing dbt · Connecting to a warehouse · Project structure · Writing &amp; running a model · Testing &amp; documenting · Everyday commands
+      </div>
+    </section>
+
+    <section id="prereq">
+      <h2><span class="num">02</span> Prerequisites</h2>
+      <ul>
+        <li>Python 3.8+ installed</li>
+        <li>A code editor (VS Code recommended)</li>
+        <li>Access to a warehouse — Snowflake, BigQuery, Postgres, Redshift, or <strong>DuckDB</strong> (best for live demos, no cloud account needed)</li>
+        <li>Git installed (optional, recommended for version control)</li>
+      </ul>
+      <pre><code><span class="comment"># check your python version</span>
+python --version</code></pre>
+    </section>
+
+    <section id="install">
+      <h2><span class="num">03</span> Installing dbt</h2>
+      <p>dbt ships in two parts: <strong>dbt-core</strong> (the framework) and <strong>dbt-&lt;adapter&gt;</strong> (a connector for your specific warehouse).</p>
+
+      <h3>3.1 — Create a virtual environment</h3>
+      <pre><code>python -m venv dbt-env
+source dbt-env/bin/activate      <span class="comment"># Mac/Linux</span>
+dbt-env\Scripts\activate         <span class="comment"># Windows</span></code></pre>
+
+      <h3>3.2 — Install dbt-core + adapter</h3>
+      <pre><code><span class="comment"># Postgres</span>
+pip install dbt-core dbt-postgres
+
+<span class="comment"># Snowflake</span>
+pip install dbt-core dbt-snowflake
+
+<span class="comment"># DuckDB — best for local, zero-setup demos</span>
+pip install dbt-core dbt-duckdb</code></pre>
+
+      <h3>3.3 — Verify installation</h3>
+      <pre><code>dbt --version</code></pre>
+      <p>You should see the dbt-core version and your installed adapter listed.</p>
+    </section>
+
+    <section id="setup">
+      <h2><span class="num">04</span> Setting Up Your First Project</h2>
+
+      <h3>4.1 — Initialize a new project</h3>
+      <pre><code>dbt init my_dbt_project</code></pre>
+      <p>This prompts you to name the project, choose your adapter, and enter connection credentials — stored in <code>profiles.yml</code> (usually at <code>~/.dbt/profiles.yml</code>).</p>
+
+      <h3>4.2 — Move into the project</h3>
+      <pre><code>cd my_dbt_project</code></pre>
+
+      <h3>4.3 — Test the connection</h3>
+      <pre><code>dbt debug</code></pre>
+    </section>
+
+    <section id="structure">
+      <h2><span class="num">05</span> Project Structure</h2>
+      <pre><code>my_dbt_project/
+├── dbt_project.yml       <span class="comment"># main project config</span>
+├── models/               <span class="comment"># your .sql models live here</span>
+├── seeds/                <span class="comment"># CSV files loaded as tables</span>
+├── snapshots/            <span class="comment"># slowly changing dimension tracking</span>
+├── macros/               <span class="comment"># reusable SQL (Jinja macros)</span>
+├── tests/                <span class="comment"># custom data tests</span>
+├── analyses/             <span class="comment"># ad-hoc SQL, not materialized</span>
+└── profiles.yml          <span class="comment"># connection creds, lives in ~/.dbt/</span></code></pre>
+    </section>
+
+    <section id="model">
+      <h2><span class="num">06</span> Creating Your First Model</h2>
+      <p>A <strong>model</strong> is simply a <code>.sql</code> file with a <code>SELECT</code> statement. dbt compiles and runs it against your warehouse.</p>
+
+      <h3>6.1 — A simple model</h3>
+      <p><code>models/customers.sql</code></p>
+      <pre><code><span class="comment">-- models/customers.sql</span>
+select
+    id as customer_id,
+    first_name,
+    last_name,
+    email,
+    created_at
+from raw.customers
+where email is not null</code></pre>
+
+      <h3>6.2 — (Optional) Load sample data as a seed</h3>
+      <p>Add a CSV to <code>seeds/</code> (e.g. <code>seeds/raw_customers.csv</code>), then:</p>
+      <pre><code>dbt seed</code></pre>
+
+      <h3>6.3 — Reference the seed from a model</h3>
+      <pre><code><span class="comment">-- models/stg_customers.sql</span>
+select
+    id as customer_id,
+    first_name,
+    last_name
+from &#123;&#123; ref('raw_customers') &#125;&#125;</code></pre>
+      <div class="callout">
+        <span class="lbl">Key concept</span>
+        <code>&#123;&#123; ref(...) &#125;&#125;</code> is core to dbt — it builds the dependency graph automatically and tells dbt what order to run models in.
+      </div>
+    </section>
+
+    <section id="run">
+      <h2><span class="num">07</span> Running Your Model</h2>
+      <pre><code><span class="comment"># run all models</span>
+dbt run
+
+<span class="comment"># run one specific model</span>
+dbt run --select stg_customers
+
+<span class="comment"># run a model + everything downstream of it</span>
+dbt run --select stg_customers+
+
+<span class="comment"># run a model + everything upstream of it</span>
+dbt run --select +stg_customers
+
+<span class="comment"># full refresh (rebuild incremental models from scratch)</span>
+dbt run --full-refresh</code></pre>
+    </section>
+
+    <section id="test">
+      <h2><span class="num">08</span> Testing Your Models</h2>
+      <p>Built-in generic tests: <code>unique</code>, <code>not_null</code>, <code>accepted_values</code>, <code>relationships</code>.</p>
+
+      <h3>8.1 — Define tests</h3>
+      <p><code>models/schema.yml</code></p>
+      <pre><code>version: 2
+
+models:
+  - name: stg_customers
+    columns:
+      - name: customer_id
+        tests:
+          - unique
+          - not_null</code></pre>
+
+      <h3>8.2 — Run the tests</h3>
+      <pre><code>dbt test
+
+<span class="comment"># or scoped to one model</span>
+dbt test --select stg_customers</code></pre>
+    </section>
+
+    <section id="docs">
+      <h2><span class="num">09</span> Documentation</h2>
+      <p>dbt auto-generates a documentation site from your models and YAML descriptions.</p>
+      <pre><code><span class="comment"># build the docs</span>
+dbt docs generate
+
+<span class="comment"># serve them locally in your browser</span>
+dbt docs serve</code></pre>
+    </section>
+
+    <section id="cheatsheet">
+      <h2><span class="num">10</span> Command Cheat Sheet</h2>
+      <table>
+        <tr><th>Command</th><th>Purpose</th></tr>
+        <tr><td><code>dbt init</code></td><td>Create a new project</td></tr>
+        <tr><td><code>dbt debug</code></td><td>Test warehouse connection</td></tr>
+        <tr><td><code>dbt run</code></td><td>Build/run all models</td></tr>
+        <tr><td><code>dbt run --select model_name</code></td><td>Run a specific model</td></tr>
+        <tr><td><code>dbt test</code></td><td>Run data tests</td></tr>
+        <tr><td><code>dbt seed</code></td><td>Load CSV seed files as tables</td></tr>
+        <tr><td><code>dbt snapshot</code></td><td>Run snapshot logic (SCD tracking)</td></tr>
+        <tr><td><code>dbt docs generate</code></td><td>Build documentation</td></tr>
+        <tr><td><code>dbt docs serve</code></td><td>View documentation locally</td></tr>
+        <tr><td><code>dbt build</code></td><td>Run seeds, models, snapshots &amp; tests together</td></tr>
+        <tr><td><code>dbt clean</code></td><td>Remove compiled files/artifacts</td></tr>
+        <tr><td><code>dbt compile</code></td><td>Compile SQL without running it</td></tr>
+      </table>
+    </section>
+
+    <section id="demoflow">
+      <h2><span class="num">11</span> Suggested Live Demo Flow</h2>
+      <div class="flow">
+        <div class="flow-step"><span class="n">1</span><div><code>pip install dbt-core dbt-duckdb</code> — install</div></div>
+        <div class="flow-step"><span class="n">2</span><div><code>dbt init demo_project</code> — initialize</div></div>
+        <div class="flow-step"><span class="n">3</span><div><code>dbt debug</code> — confirm connection</div></div>
+        <div class="flow-step"><span class="n">4</span><div>Create <code>models/customers.sql</code> — write first model</div></div>
+        <div class="flow-step"><span class="n">5</span><div><code>dbt run</code> — run it</div></div>
+        <div class="flow-step"><span class="n">6</span><div>Add a test in <code>schema.yml</code></div></div>
+        <div class="flow-step"><span class="n">7</span><div><code>dbt test</code> — run it</div></div>
+        <div class="flow-step"><span class="n">8</span><div><code>dbt docs generate &amp;&amp; dbt docs serve</code> — show documentation</div></div>
+        <div class="flow-step"><span class="n">9</span><div>Modify the model, rerun <code>dbt run --select customers</code> — show iteration speed</div></div>
+      </div>
+    </section>
+
+    <section id="pitfalls">
+      <h2><span class="num">12</span> Common Pitfalls to Mention</h2>
+      <ul>
+        <li>Forgetting to activate the virtual environment before running <code>dbt</code> commands</li>
+        <li>Confusing <code>profiles.yml</code> (connection info, outside the project) with <code>dbt_project.yml</code> (project config, inside the project)</li>
+        <li>Not using <code>&#123;&#123; ref() &#125;&#125;</code> between models, which breaks dependency tracking</li>
+        <li>Running <code>dbt run</code> before <code>dbt seed</code> when models depend on seed data</li>
+      </ul>
+    </section>
+
+    <footer>END OF GUIDE — READY FOR LIVE WALKTHROUGH</footer>
+  </main>
+</div>
+
+<script>
+  const links = document.querySelectorAll('#toc a');
+  const sections = document.querySelectorAll('main section');
+  const obs = new IntersectionObserver((entries)=>{
+    entries.forEach(e=>{
+      if(e.isIntersecting){
+        links.forEach(l=>l.classList.remove('active'));
+        const id = e.target.getAttribute('id');
+        const match = document.querySelector('#toc a[href="#'+id+'"]');
+        if(match) match.classList.add('active');
+      }
+    });
+  }, {rootMargin:"-20% 0px -70% 0px"});
+  sections.forEach(s=>obs.observe(s));
+</script>
+</body>
+</html>
