@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HICA: Explore the Silo lake with DuckDB</title>
+<style>
+  :root { --bg:#fff; --fg:#1c2b33; --muted:#5d6f78; --card:#f3f7f8; --line:#d7e0e3; --accent:#0b6e8a; --code:#0f1c22; --codefg:#e6f1f4; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#10181c; --fg:#e6eef1; --muted:#9db0b8; --card:#17232a; --line:#2a3b44; --accent:#5cc3df; --code:#0a1317; --codefg:#e6f1f4; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  main { max-width:760px; margin:0 auto; padding:32px 16px 64px; }
+  h1 { font-size:1.7rem; margin:0 0 4px; }
+  .sub { color:var(--muted); margin:0 0 28px; }
+  h2 { font-size:1.15rem; margin:32px 0 8px; }
+  .step { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin:12px 0; }
+  .step b.n { display:inline-block; background:var(--accent); color:#fff; border-radius:50%; width:1.6em; height:1.6em; text-align:center; margin-right:8px; }
+  pre { position:relative; background:var(--code); color:var(--codefg); border-radius:8px; padding:12px 14px; overflow:auto; font:14px/1.5 ui-monospace,Consolas,monospace; margin:10px 0 4px; }
+  code { font-family:ui-monospace,Consolas,monospace; background:var(--card); border:1px solid var(--line); border-radius:4px; padding:0 4px; }
+  pre code { background:none; border:0; padding:0; }
+  button.copy { position:absolute; top:6px; right:6px; font-size:12px; background:#264653; color:#fff; border:0; border-radius:5px; padding:3px 8px; cursor:pointer; }
+  .note { color:var(--muted); font-size:.92rem; }
+  .warn { border-left:4px solid #e0a82e; background:var(--card); padding:10px 14px; border-radius:6px; margin:14px 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Explore the Silo lake with DuckDB</h1>
+  <p class="sub">HICA training · a browser notebook where you type SQL and read the lake files directly.</p>
+
+  <h2>Before you start</h2>
+  <p>You need the HMIS platform set up (the project folder with <code>docker-compose.yml</code>) and the dbt virtual environment <code>~/venvs/hmis-dbt</code>, which already contains DuckDB. Open the project folder in VS Code and use the WSL terminal.</p>
+
+  <h2>One-time setup</h2>
+  <div class="step"><b class="n">1</b><b>Create the file.</b>
+    In the VS Code Explorer, click the <b>New File</b> icon, name it <code>duckdb_ui.py</code> and keep it in the project folder, next to <code>prefect.yaml</code>.</div>
+  <div class="step"><b class="n">2</b><b>Paste this into it and save with Ctrl+S.</b>
+<pre><button class="copy">Copy</button><code>import duckdb
+
+con = duckdb.connect()
+con.sql("INSTALL httpfs; LOAD httpfs;")
+con.sql("""
+CREATE SECRET silo (
+  TYPE s3,
+  KEY_ID 'minioadmin',
+  SECRET 'minioadmin',
+  ENDPOINT 'localhost:9100',
+  URL_STYLE 'path',
+  USE_SSL false
+)
+""")
+con.sql("CALL start_ui()")
+input("DuckDB UI is running. Press Enter here to stop it.\n")</code></pre>
+    <p class="note">What it does: starts DuckDB, adds the extension that reads S3-style storage, saves the Silo address and login, and opens the browser interface.</p>
+  </div>
+
+  <h2>Every time you want to use it</h2>
+  <div class="step"><b class="n">1</b><b>Start the services</b> (skip if they are already running):
+<pre><button class="copy">Copy</button><code>docker compose up -d</code></pre></div>
+  <div class="step"><b class="n">2</b><b>Activate the dbt environment:</b>
+<pre><button class="copy">Copy</button><code>source ~/venvs/hmis-dbt/bin/activate</code></pre></div>
+  <div class="step"><b class="n">3</b><b>Run the file</b> from the project folder:
+<pre><button class="copy">Copy</button><code>python duckdb_ui.py</code></pre>
+    <p class="note">You may see <code>xdg-open: not found</code>. Ignore it, it only means WSL could not open the browser for you.</p></div>
+  <div class="step"><b class="n">4</b><b>Open the interface.</b> In your Windows browser go to <code>http://localhost:4213</code> and click <b>Or give me an empty notebook</b>.</div>
+  <div class="step"><b class="n">5</b><b>Run SQL.</b> Type in a cell and press <b>Ctrl+Enter</b>. Start with:
+<pre><button class="copy">Copy</button><code>select * from glob('s3://hmis-datalake/**') limit 50;</code></pre></div>
+  <div class="step"><b class="n">6</b><b>Stop it.</b> Click the terminal and press <b>Enter</b>.</div>
+
+  <h2>Handy queries</h2>
+  <p>Count files in each layer of the lake:</p>
+<pre><button class="copy">Copy</button><code>select split_part(file, '/', 4) as layer, count(*) as files
+from glob('s3://hmis-datalake/**')
+group by all order by 1;</code></pre>
+  <p>See the columns of a Parquet file (use a path you found with <code>glob</code>):</p>
+<pre><button class="copy">Copy</button><code>describe select * from read_parquet('s3://hmis-datalake/staging/dhis2/stg_dhis2__data_elements.parquet');</code></pre>
+  <p>Read the raw landing JSON, one row per data value:</p>
+<pre><button class="copy">Copy</button><code>select
+  dv->>'dataElement' as data_element,
+  dv->>'period'      as period,
+  dv->>'orgUnit'     as org_unit,
+  dv->>'value'       as value
+from (
+  select unnest(dataValues) as dv
+  from read_json_auto('s3://hmis-datalake/landing/dhis2/data_values/dataset=staffing/**/*.json.gz')
+)
+limit 20;</code></pre>
+
+  <div class="warn"><b>Good to know.</b> Keep the terminal open while you use the notebook. The login <code>minioadmin / minioadmin</code> is for local teaching only. If you see a connection error, check that the Silo container is running with <code>docker compose ps</code>. If <code>start_ui</code> is not found, run <code>pip install -U duckdb</code> in the activated environment.</div>
+</main>
+<script>
+  document.querySelectorAll('button.copy').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var t = b.parentElement.querySelector('code').innerText;
+      var done = function () { b.textContent = 'Copied'; setTimeout(function () { b.textContent = 'Copy'; }, 1500); };
+      if (navigator.clipboard) { navigator.clipboard.writeText(t).then(done); }
+    });
+  });
+</script>
+</body>
+</html>

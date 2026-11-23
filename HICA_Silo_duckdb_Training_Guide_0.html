@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NHIC Silo (MinIO) + DuckDB Query Guide</title>
+<style>
+:root{--ink:#172033;--muted:#586579;--line:#dbe2ea;--bg:#f4f7fb;--card:#fff;--blue:#175cd3;--pale:#eaf2ff;--green:#087443;--greenbg:#e8f7ef;--amber:#8a4b08;--amberbg:#fff4df;--code:#101828}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+main{max-width:1000px;margin:36px auto;padding:0 22px 56px}
+header{background:linear-gradient(135deg,#102a56,#175cd3);color:#fff;padding:34px;border-radius:18px;margin-bottom:22px}
+header h1{font-size:30px;line-height:1.2;margin:0 0 10px}header p{margin:0;color:#e3edff;max-width:760px}
+h2{font-size:22px;margin:32px 0 12px}h3{font-size:17px;margin:20px 0 8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;margin:14px 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+.metric{background:#fff;border:1px solid var(--line);border-radius:12px;padding:15px}
+.metric strong{display:block;font-size:14px;color:var(--muted);margin-bottom:4px}.metric code{font-size:15px}
+.note{background:var(--pale);border-left:4px solid var(--blue);padding:12px 15px;border-radius:8px;margin:14px 0}
+.success{background:var(--greenbg);border-left:4px solid var(--green);padding:12px 15px;border-radius:8px;margin:14px 0}
+.warn{background:var(--amberbg);border-left:4px solid #d97706;padding:12px 15px;border-radius:8px;margin:14px 0}
+pre{background:var(--code);color:#e6edf7;padding:16px;border-radius:10px;overflow-x:auto;font:13.5px/1.55 Consolas,Monaco,monospace;white-space:pre}
+code{font-family:Consolas,Monaco,monospace;background:#eef2f7;padding:2px 5px;border-radius:5px}
+pre code{background:transparent;padding:0}
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:14px}th,td{text-align:left;padding:10px;border-bottom:1px solid var(--line);vertical-align:top}th{background:#f0f4f9}
+ol,ul{padding-left:23px}li{margin:6px 0}.muted{color:var(--muted)}.small{font-size:13px;color:var(--muted)}
+footer{margin-top:34px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:13px}
+@media print{body{background:#fff}main{margin:0;max-width:none}header{background:#175cd3!important;print-color-adjust:exact}.card,.metric{break-inside:avoid}pre{white-space:pre-wrap;word-break:break-word}}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Querying NHIC Silo / MinIO with DuckDB</h1>
+  <p>A practical record of the setup, connection details, bucket discovery, Landing-versus-Staging queries, and troubleshooting completed on 22 November 2026.</p>
+</header>
+
+<section class="card">
+<h2 style="margin-top:0">1. What we achieved</h2>
+<div class="success"><strong>Connection verified.</strong> DuckDB successfully listed objects in the <code>hmis-datalake</code> bucket with <code>SELECT * FROM glob('s3://hmis-datalake/**')</code>. This confirms that DuckDB can reach the Silo object store and read its object listing.</div>
+<p>The data is queried in place through MinIO's S3-compatible API. It does not need to be copied into ClickHouse just to inspect it.</p>
+<div class="grid">
+  <div class="metric"><strong>Silo Console (browser)</strong><code>http://localhost:9101/</code></div>
+  <div class="metric"><strong>Silo S3 API (DuckDB)</strong><code>http://localhost:9100</code></div>
+  <div class="metric"><strong>Bucket discovered</strong><code>hmis-datalake</code></div>
+  <div class="metric"><strong>DuckDB extension</strong><code>httpfs</code></div>
+</div>
+</section>
+
+<h2>2. Understand the ports</h2>
+<table>
+<thead><tr><th>Container service</th><th>Host port</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td><code>hmis-silo-silo-1</code> – MinIO API</td><td><code>9100</code> → container <code>9000</code></td><td>S3-compatible API. DuckDB on Windows connects here.</td></tr>
+<tr><td><code>hmis-silo-silo-1</code> – MinIO Console</td><td><code>9101</code> → container <code>9001</code></td><td>Browser interface for browsing buckets and objects.</td></tr>
+<tr><td><code>hmis-silo-clickhouse-1</code> – HTTP</td><td><code>8124</code> → container <code>8123</code></td><td>ClickHouse HTTP interface; not the MinIO endpoint.</td></tr>
+<tr><td><code>hmis-silo-clickhouse-1</code> – native</td><td><code>9010</code> → container <code>9000</code></td><td>ClickHouse native protocol; not the MinIO endpoint.</td></tr>
+</tbody>
+</table>
+<div class="warn"><strong>Important:</strong> Do not confuse the Silo Console port <code>9101</code> with the S3 API port <code>9100</code>. DuckDB uses <code>localhost:9100</code>. The Console is for browsing; it is not a SQL editor.</div>
+
+<h2>3. Install DuckDB</h2>
+<p>On Windows, there are two common ways to use DuckDB.</p>
+<h3>Option A — DuckDB CLI installer (PowerShell)</h3>
+<p>To install the DuckDB command-line tool on Windows, open PowerShell and run:</p>
+<pre><code># Install DuckDB CLI
+powershell -NoExit -ExecutionPolicy Bypass -Command "irm https://install.duckdb.org/install.ps1 | iex"</code></pre>
+<p>After the installer completes, open a new PowerShell window and run <code>duckdb</code> to start the DuckDB SQL prompt. If PowerShell cannot find the command, restart the terminal so it reloads the updated PATH.</p>
+<h3>Option B — Python package</h3>
+<p>Activate the Python virtual environment you want to use, then install DuckDB:</p>
+<pre><code>python -m pip install --upgrade pip
+python -m pip install duckdb</code></pre>
+<p>Start Python and check the installation:</p>
+<pre><code>python
+>>> import duckdb
+>>> duckdb.sql("SELECT version()").show()</code></pre>
+<h3>Option C — Start the DuckDB CLI</h3>
+<p>If you installed the DuckDB CLI, open PowerShell in the folder containing <code>duckdb.exe</code>, or make it available on your PATH, then run:</p>
+<pre><code>duckdb</code></pre>
+<p>At the DuckDB prompt, enter SQL statements directly. The successful commands in this guide use DuckDB SQL syntax.</p>
+<div class="note">The Python package and CLI are separate ways to access DuckDB. If you installed only the Python package, run SQL through Python (for example, <code>duckdb.sql(...)</code>) or install the CLI separately.</div>
+
+<h2>4. Check that Silo is running and find its connection details</h2>
+<h3>Check Docker containers and published ports (PowerShell)</h3>
+<pre><code>docker ps --format "table {{.Names}}\t{{.Ports}}"</code></pre>
+<p>In this setup, the relevant container was <code>hmis-silo-silo-1</code>, with host ports <code>9100</code> and <code>9101</code>.</p>
+<h3>Check the MinIO API health</h3>
+<pre><code>curl.exe http://localhost:9100/minio/health/live</code></pre>
+<p>A successful health response indicates the API is reachable. If it fails, check that the container is running and that the port mapping is still present.</p>
+<h3>Find the configured MinIO credentials</h3>
+<p>Check the container environment without publishing or sharing the secret values:</p>
+<pre><code>docker inspect hmis-silo-silo-1 --format '{{range .Config.Env}}{{println .}}{{end}}' |
+  Select-String 'MINIO_ROOT_USER|MINIO_ROOT_PASSWORD'</code></pre>
+<p>If the variables are not shown, inspect the Compose file and the project's <code>.env</code> file for the MinIO environment configuration. Keep the access key and secret key private.</p>
+<h3>Inspect MinIO Client aliases</h3>
+<pre><code>docker exec hmis-silo-silo-1 mc alias list</code></pre>
+<p>The alias output we inspected showed a <code>local</code> alias pointing to <code>http://localhost:9000</code> inside the container, but its AccessKey and SecretKey were blank. The <code>gcs</code> and <code>s3</code> entries showed placeholder credentials, not working Silo credentials.</p>
+<div class="note">Inside the MinIO container, the API is on port <code>9000</code>. From Windows, Docker publishes that same API on <code>localhost:9100</code>. This is why the endpoint differs depending on where the client runs.</div>
+
+<h2>5. Configure DuckDB to connect to Silo</h2>
+<p>Open DuckDB and install/load its <code>httpfs</code> extension. This extension provides remote-file and S3-compatible access.</p>
+<pre><code>INSTALL httpfs;
+LOAD httpfs;</code></pre>
+<p>Create a DuckDB S3 secret using the actual MinIO credentials. Run this once per DuckDB session (or configure a persistent secret if that suits your security policy):</p>
+<pre><code>CREATE OR REPLACE SECRET silo_secret (
+    TYPE S3,
+    KEY_ID 'YOUR_MINIO_ACCESS_KEY',
+    SECRET 'YOUR_MINIO_SECRET_KEY',
+    REGION 'us-east-1',
+    ENDPOINT 'localhost:9100',
+    URL_STYLE 'path',
+    USE_SSL false
+);</code></pre>
+<ul>
+<li>Replace the two credential placeholders with the configured MinIO access key and secret key.</li>
+<li>Use <code>ENDPOINT 'localhost:9100'</code> when DuckDB runs on the Windows host.</li>
+<li>Use <code>URL_STYLE 'path'</code> for a typical MinIO path-style bucket URL.</li>
+<li>Use <code>USE_SSL false</code> for the local HTTP endpoint shown in this setup.</li>
+<li>The region value must match the MinIO configuration if a specific region has been configured; <code>us-east-1</code> is commonly used as a default.</li>
+</ul>
+<div class="warn"><strong>Credential safety:</strong> Never paste real access keys or secret keys into chat, screenshots, source control, or shared documents. Avoid saving credentials in scripts committed to Git.</div>
+
+<h2>6. Discover buckets and files</h2>
+<p>The following query succeeded in the user's DuckDB session:</p>
+<pre><code>SELECT *
+FROM glob('s3://hmis-datalake/**');</code></pre>
+<p>It returned object paths from the <code>hmis-datalake</code> bucket, confirming successful object discovery. The output showed these main prefixes:</p>
+<table>
+<thead><tr><th>Prefix</th><th>Observed contents</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>_runs/dhis2/</code></td><td>Timestamped JSON run records</td><td>Ingestion run metadata / records</td></tr>
+<tr><td><code>landing/dhis2/</code></td><td>Partitioned raw JSON and <code>.json.gz</code> files</td><td>Raw DHIS2 landing data</td></tr>
+<tr><td><code>staging/dhis2/</code></td><td>Parquet files named <code>stg_dhis2__*.parquet</code></td><td>dbt-produced staging models</td></tr>
+</tbody>
+</table>
+<p>To list only objects under a prefix:</p>
+<pre><code>SELECT *
+FROM glob('s3://hmis-datalake/staging/dhis2/**');</code></pre>
+
+<h2>7. Query the Landing layer (raw files)</h2>
+<p>The Console link supplied during the session pointed to this raw child-health data-value object:</p>
+<pre><code>s3://hmis-datalake/landing/dhis2/data_values/
+  dataset=child_health/
+  data_set_id=BfMAe6Itzgt/
+  run_id=20261103T124700Z/
+  mode=full/
+  2026-11.json.gz</code></pre>
+<p>DuckDB query for that exact raw JSON.GZ object:</p>
+<pre><code>SELECT *
+FROM read_json_auto(
+  's3://hmis-datalake/landing/dhis2/data_values/dataset=child_health/data_set_id=BfMAe6Itzgt/run_id=20261103T124700Z/mode=full/2026-11.json.gz'
+)
+LIMIT 100;</code></pre>
+<p>This is a Landing-layer query. It reads the raw JSON object, not the dbt staging Parquet model.</p>
+
+<h2>8. Query the Staging layer (Parquet)</h2>
+<p>The object listing showed the following staging models:</p>
+<ul>
+<li><code>stg_dhis2__category_option_combos.parquet</code></li>
+<li><code>stg_dhis2__data_elements.parquet</code></li>
+<li><code>stg_dhis2__data_set_org_units.parquet</code></li>
+<li><code>stg_dhis2__data_sets.parquet</code></li>
+<li><code>stg_dhis2__data_values.parquet</code></li>
+<li><code>stg_dhis2__organisation_units.parquet</code></li>
+</ul>
+<p><strong>Use this query to select data values from the staging model:</strong></p>
+<pre><code>SELECT *
+FROM read_parquet(
+  's3://hmis-datalake/staging/dhis2/stg_dhis2__data_values.parquet'
+)
+LIMIT 100;</code></pre>
+<p>Count the rows:</p>
+<pre><code>SELECT COUNT(*) AS total_records
+FROM read_parquet(
+  's3://hmis-datalake/staging/dhis2/stg_dhis2__data_values.parquet'
+);</code></pre>
+<p>Inspect the actual column names and data types before writing more specific queries:</p>
+<pre><code>DESCRIBE
+SELECT *
+FROM read_parquet(
+  's3://hmis-datalake/staging/dhis2/stg_dhis2__data_values.parquet'
+);</code></pre>
+<p>After confirming the schema, query only columns that actually exist. For example, if the model contains <code>period</code>:</p>
+<pre><code>SELECT
+  period,
+  COUNT(*) AS total_records
+FROM read_parquet(
+  's3://hmis-datalake/staging/dhis2/stg_dhis2__data_values.parquet'
+)
+GROUP BY period
+ORDER BY period DESC;</code></pre>
+
+<h2>9. Querying dbt Intermediate Parquet models</h2>
+<p>If your dbt project writes Intermediate models to the Silo bucket as Parquet files, you can query them directly with DuckDB in the same way as the Staging models. The exact Intermediate prefix and filenames were not visible in the object-listing output shared during this session, so first discover their actual paths.</p>
+<h3>Find Intermediate model files</h3>
+<pre><code>SELECT *
+FROM glob('s3://hmis-datalake/intermediate/**');</code></pre>
+<p>If your project uses a different prefix (for example, <code>marts/</code> or a nested dbt target folder), search the bucket listing for the actual Parquet object paths:</p>
+<pre><code>SELECT *
+FROM glob('s3://hmis-datalake/**')
+WHERE file ILIKE '%intermediate%'
+   OR file ILIKE '%int_%'
+   OR file ILIKE '%\.parquet';</code></pre>
+<p>Once you have confirmed the exact object path, query one Intermediate model:</p>
+<pre><code>SELECT *
+FROM read_parquet(
+  's3://hmis-datalake/ACTUAL_INTERMEDIATE_PREFIX/ACTUAL_MODEL.parquet'
+)
+LIMIT 100;</code></pre>
+<h3>Inspect the Intermediate model schema</h3>
+<pre><code>DESCRIBE
+SELECT *
+FROM read_parquet(
+  's3://hmis-datalake/ACTUAL_INTERMEDIATE_PREFIX/ACTUAL_MODEL.parquet'
+);</code></pre>
+<h3>Count records</h3>
+<pre><code>SELECT COUNT(*) AS total_records
+FROM read_parquet(
+  's3://hmis-datalake/ACTUAL_INTERMEDIATE_PREFIX/ACTUAL_MODEL.parquet'
+);</code></pre>
+<h3>Query multiple Parquet files (only when schemas are compatible)</h3>
+<pre><code>SELECT *
+FROM read_parquet(
+  's3://hmis-datalake/ACTUAL_INTERMEDIATE_PREFIX/*.parquet',
+  union_by_name = true
+)
+LIMIT 100;</code></pre>
+<div class="note"><strong>Important:</strong> Intermediate models are not the same as the raw Landing files or the Staging models. Use the actual prefix and filenames produced by your dbt configuration. Do not assume that an <code>intermediate/</code> folder exists until it appears in the Silo object listing. The <code>union_by_name</code> option is useful only when combining files with differing but compatible column layouts; querying one model file at a time is safer for initial inspection.</div>
+
+<h2>10. Troubleshooting checklist</h2>
+<table>
+<thead><tr><th>Symptom</th><th>Likely cause</th><th>What to check</th></tr></thead>
+<tbody>
+<tr><td>Connection refused / cannot connect</td><td>Container stopped, wrong host port, or API not reachable</td><td>Run <code>docker ps</code>; test <code>curl.exe http://localhost:9100/minio/health/live</code>.</td></tr>
+<tr><td>Access denied / invalid access key</td><td>Wrong or missing MinIO credentials</td><td>Check <code>MINIO_ROOT_USER</code> and <code>MINIO_ROOT_PASSWORD</code> in the container configuration or Compose <code>.env</code>.</td></tr>
+<tr><td>Bucket or key not found</td><td>Incorrect bucket name or object path</td><td>Run <code>glob('s3://hmis-datalake/**')</code> and copy the exact object key.</td></tr>
+<tr><td>DuckDB says S3 support is unavailable</td><td><code>httpfs</code> is not installed or loaded</td><td>Run <code>INSTALL httpfs;</code> then <code>LOAD httpfs;</code>.</td></tr>
+<tr><td>File format / JSON parsing error</td><td>Wrong reader for the object format or unexpected JSON structure</td><td>Use <code>read_json_auto()</code> for JSON/JSON.GZ and <code>read_parquet()</code> for Parquet. Inspect a small sample.</td></tr>
+<tr><td>Column does not exist</td><td>Assumed column names do not match the dbt model</td><td>Run <code>DESCRIBE SELECT * FROM read_parquet(...)</code> first.</td></tr>
+<tr><td>Glob returns no objects</td><td>Incorrect prefix, bucket, or permissions</td><td>Try the known bucket root and progressively narrower prefixes.</td></tr>
+<tr><td>Slow query / large download</td><td>Large object or broad wildcard scans many files</td><td>Start with one exact object and a small <code>LIMIT</code>; avoid scanning the whole bucket unnecessarily.</td></tr>
+</tbody>
+</table>
+
+<h2>11. Key distinctions to remember</h2>
+<div class="card">
+<ul>
+<li><strong>Silo / MinIO</strong> is object storage. It stores objects; it is not itself a SQL database.</li>
+<li><strong>MinIO Console</strong> (<code>localhost:9101</code>) is used to browse buckets and files.</li>
+<li><strong>MinIO S3 API</strong> (<code>localhost:9100</code>) is the endpoint DuckDB uses from the Windows host.</li>
+<li><strong>DuckDB</strong> is the SQL engine used here to query remote JSON and Parquet objects in place.</li>
+<li><strong>Landing</strong> contains raw ingested files; <strong>Staging</strong> contains the dbt-generated Parquet models observed in this bucket.</li>
+<li><strong>ClickHouse</strong> is a separate analytical database in this Docker stack. Its ports are not the Silo S3 endpoint.</li>
+</ul>
+</div>
+
+<h2>12. Quick-start command sequence</h2>
+<p>After DuckDB is installed and the Silo credentials are available, this is the short sequence to reconnect and query the staging data values:</p>
+<pre><code>-- DuckDB SQL
+INSTALL httpfs;
+LOAD httpfs;
+
+CREATE OR REPLACE SECRET silo_secret (
+    TYPE S3,
+    KEY_ID 'YOUR_MINIO_ACCESS_KEY',
+    SECRET 'YOUR_MINIO_SECRET_KEY',
+    REGION 'us-east-1',
+    ENDPOINT 'localhost:9100',
+    URL_STYLE 'path',
+    USE_SSL false
+);
+
+-- Confirm bucket/object visibility
+SELECT *
+FROM glob('s3://hmis-datalake/**');
+
+-- Query the dbt staging data-values model
+SELECT *
+FROM read_parquet(
+  's3://hmis-datalake/staging/dhis2/stg_dhis2__data_values.parquet'
+)
+LIMIT 100;</code></pre>
+
+<footer>
+<strong>Prepared from the setup and command outputs shared in this conversation.</strong><br>
+Verified in the session: Docker port mappings, Silo bucket/object listing through DuckDB, the Landing child-health data-value object path, and the existence of the dbt staging data-values Parquet object. The document does not contain real credentials.
+</footer>
+</main>
+</body>
+</html>
