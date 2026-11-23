@@ -1,0 +1,671 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Build a Data Pipeline with dbt: HICA Step-by-Step Guide</title><style>
+:root{--bg:#fbfaf8;--fg:#1f2328;--mut:#5f6b76;--line:#dcd8d1;--acc:#0b6b5a;--accbg:#e7f2ef;--codebg:#14181d;--codefg:#e8edf2;--inl:#efece6;--th:#f1eee8}
+@media (prefers-color-scheme:dark){:root{--bg:#14171a;--fg:#e6e8ea;--mut:#9aa5ae;--line:#2d3339;--acc:#57c4ad;--accbg:#18302b;--codebg:#0c0f12;--codefg:#e8edf2;--inl:#23282d;--th:#1d2226}}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.65 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.layout{display:flex;gap:40px;max-width:1240px;margin:0 auto;padding:0 20px}
+nav{position:sticky;top:0;align-self:flex-start;width:260px;flex:none;max-height:100vh;overflow:auto;padding:28px 0;font-size:14px}
+nav .lbl{font-weight:600;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;font-size:12px;margin-bottom:10px}
+nav a{display:block;color:var(--mut);text-decoration:none;padding:5px 10px;border-left:2px solid var(--line);line-height:1.35}
+nav a:hover{color:var(--acc);border-left-color:var(--acc)}
+nav a.on{color:var(--acc);border-left-color:var(--acc);font-weight:600}
+nav a.h3{padding-left:22px;font-size:13px}
+main{min-width:0;max-width:820px;padding:36px 0 90px;flex:1}
+h1{font-size:2.05rem;line-height:1.2;margin:0 0 6px}
+.byline{color:var(--mut);margin:0 0 28px}
+h2{font-size:1.55rem;margin:2.6em 0 .6em;padding-top:.6em;border-top:1px solid var(--line);line-height:1.25}
+h3{font-size:1.2rem;margin:2em 0 .5em;color:var(--acc);line-height:1.3}
+p,li{max-width:70ch}
+li{margin:.3em 0}
+code{background:var(--inl);padding:.12em .38em;border-radius:5px;font:.88em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-word}
+pre{position:relative;background:var(--codebg);color:var(--codefg);padding:16px 18px;border-radius:10px;overflow:auto;margin:1em 0;font-size:14px;line-height:1.55}
+pre code{background:none;padding:0;color:inherit;font-size:inherit;word-break:normal;white-space:pre}
+.cp{position:absolute;top:8px;right:8px;background:#2b333b;color:#cfd8df;border:0;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;opacity:.85}
+.cp:hover{opacity:1;background:var(--acc);color:#fff}
+.tw{overflow-x:auto;margin:1.1em 0;border:1px solid var(--line);border-radius:10px}
+table{border-collapse:collapse;width:100%;font-size:15px}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+th{background:var(--th);font-weight:600;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td code{white-space:normal}
+strong{font-weight:650}
+.foot{margin-top:60px;padding-top:18px;border-top:1px solid var(--line);color:var(--mut);font-size:14px}
+@media (max-width:980px){.layout{display:block;padding:0 16px}nav{display:none}main{padding-top:24px}}
+@media print{nav,.cp{display:none}.layout{display:block}body{background:#fff;color:#000;font-size:11pt}pre{background:#f4f4f4;color:#000;border:1px solid #ccc;white-space:pre-wrap}h2{page-break-after:avoid}pre,table{page-break-inside:avoid}}
+</style></head>
+<body><div class="layout"><nav><div class="lbl">Contents</div><div class="list"></div></nav>
+<main>
+<h1 id="build-a-data-pipeline-with-dbt-hica-step-by-step-guide">Build a Data Pipeline with dbt: HICA Step-by-Step Guide</h1>
+<p class="byline">HICA training guide &middot; Prepared 15 November 2026</p>
+<h2 id="welcome-what-you-will-build">Welcome: what you will build</h2>
+<p>By the end of this guide you will have built, by hand and one small step at a time, a data pipeline that turns raw DHIS2 population data into a district-by-year table a dashboard can read, and you will have tested it. You need no dbt or SQL experience. Every command is explained, and every step ends with a check so you know it worked before you move on.</p>
+<h3 id="the-big-picture">The big picture</h3>
+<p>Data moves through five layers. Each layer is a little cleaner than the one before it. You will build layers 2 to 5 yourself.</p>
+<div class="tw"><table><thead><tr><th>#</th><th>Layer</th><th>Where it lives</th><th>What happens here</th></tr></thead><tbody><tr><td>1</td><td>Landing</td><td>Silo, as compressed JSON files</td><td>Raw data exactly as DHIS2 sent it. Already loaded for you. Never edited.</td></tr><tr><td>2</td><td>Staging</td><td>Silo, as one Parquet file</td><td>One tidy row per value. Columns get proper types. Duplicates are removed.</td></tr><tr><td>3</td><td>Intermediate</td><td>Silo, as one Parquet file</td><td>Codes are replaced by names: indicator names and districts.</td></tr><tr><td>4</td><td>Lake view</td><td>ClickHouse, as a view</td><td>A window onto the Parquet file. Nothing is copied.</td></tr><tr><td>5</td><td>Gold</td><td>ClickHouse, as a table</td><td>One row per district and year, one column per indicator. This is what dashboards read.</td></tr></tbody></table></div>
+<p>Two tools do the work. <strong>dbt</strong> (&quot;data build tool&quot;) runs SQL files in the right order and tests the results. Each SQL file is called a <strong>model</strong>, and each model builds one table or file. You never write code to &quot;create a table&quot;; you only write a <code>select</code> and dbt does the rest. <strong>DuckDB</strong> runs the SQL for layers 2 and 3, and <strong>ClickHouse</strong> runs it for layers 4 and 5. That is why there are two dbt projects: <code>lake</code> (DuckDB) and <code>warehouse</code> (ClickHouse).</p>
+<h3 id="what-you-need-before-you-start">What you need before you start</h3>
+<ul><li><p>A laptop with WSL (Linux on Windows), VS Code, and the project folder <code>Data ingestion with prefect</code> already on it.</p></li><li><p>The Python environment <code>hmis-dbt</code> already installed. To check, open a terminal in VS Code: the line must start with (hmis-dbt), as in step 0.2.</p></li><li><p>Silo (the file store) running on <code>localhost:9100</code>, with its console on <code>localhost:9101</code>.</p></li><li><p>ClickHouse running, with its browser tool at <code>http://localhost:8124/play</code>.</p></li><li><p>The password-like value <code>HMIS_HASH_SALT</code>, which is already in the project&#39;s <code>.env</code> file.</p></li><li><p>About three hours, including breaks.</p></li></ul>
+<h3 id="is-this-safe-for-the-live-pipeline">Is this safe for the live pipeline?</h3>
+<p>Yes, with one thing to watch. Everything you create is named <code>training_...</code> and lives in folders called <code>training</code>, so it never overwrites an existing model. Pause the scheduled Prefect runs before you start (step 1.1), so that nothing runs while you edit. One caution, repeated in step 9: use <code>dbt run -s &lt;model name&gt;</code> and do not put a <code>+</code> in front of the name once your models depend on production models, because the <code>+</code> also rebuilds the production models they read from.</p>
+<h3 id="how-every-step-is-laid-out">How every step is laid out</h3>
+<p>Each step has the same four parts, so you always know what to do next.</p>
+<ol><li><p><strong>Why:</strong> one or two sentences on what the step teaches.</p></li><li><p><strong>In VS Code:</strong> the file to create or edit, with the exact text to paste. When a step says to replace the file, press Ctrl+A to select everything, paste over it and press Ctrl+S. Never add new code below the old code.</p></li><li><p><strong>In the terminal:</strong> the commands to run, each explained.</p></li><li><p><strong>Check:</strong> what you should see. If you do not see it, stop and use the Troubleshooting section before you continue.</p></li></ol>
+<p>The golden rule of this guide: <strong>change one thing, run it, look at the result.</strong> Never change three things and then run. When something breaks, you will know exactly which change caused it.</p>
+<h2 id="part-0-set-up-your-workspace">Part 0: Set up your workspace</h2>
+<p>You will work in two places at once. <strong>VS Code</strong> is where you create and edit files. The <strong>terminal</strong> inside VS Code is where you run commands. Spend ten minutes here getting comfortable, because every later step uses these same few moves.</p>
+<h3 id="01-open-the-project-in-vs-code">0.1 Open the project in VS Code</h3>
+<ol><li><p>Open VS Code.</p></li><li><p>Look at the bottom-left corner of the window. It should show a blue or green box that says <strong>WSL: Ubuntu</strong> (or similar). That means VS Code is working inside Linux, where dbt is installed. If you do not see it, click the box, choose <strong>Connect to WSL</strong>, and wait for the window to reload.</p></li><li><p>Choose <strong>File, then Open Folder</strong>, and select the project folder named <code>Data ingestion with prefect</code>. Click <strong>OK</strong>. If VS Code asks &quot;Do you trust the authors of this folder?&quot;, choose <strong>Yes, I trust the authors</strong>.</p></li><li><p>On the left you now see the <strong>Explorer</strong>, a tree of folders. Open <code>dbt</code>. Inside it you will see two folders, <code>lake</code> and <code>warehouse</code>. These are your two dbt projects.</p></li></ol>
+<p><strong>Check:</strong> the Explorer shows <code>dbt</code>, and inside it <code>lake</code> and <code>warehouse</code>.</p>
+<h3 id="02-open-the-terminal-and-activate-the-python-environment">0.2 Open the terminal and activate the Python environment</h3>
+<ol><li><p>In VS Code choose <strong>Terminal, then New Terminal</strong> (or press Ctrl+backtick). A panel opens at the bottom.</p></li><li><p>Look at the start of the line. If it begins with <code>(hmis-dbt)</code>, the Python environment that contains dbt is already active, and you can go on. If it does not, run:</p></li></ol>
+<pre><code class="language-bash">source ~/venvs/hmis-dbt/bin/activate</code></pre>
+<p><strong>What it means:</strong> <code>source</code> runs a file in your current terminal, and that file switches on a private Python setup called a virtual environment. dbt is installed inside it, so without it the command <code>dbt</code> is not found. The <code>(hmis-dbt)</code> at the start of the line is how you know it is on.</p>
+<ol start="3"><li><p>Move into the lake project. The path will be slightly different on your laptop, so type the start of each folder name and press the <strong>Tab</strong> key to auto-complete it:</p></li></ol>
+<pre><code class="language-bash">cd dbt/lake</code></pre>
+<p><strong>What it means:</strong> <code>cd</code> means &quot;change directory&quot;, that is, move into a folder. The text before the <code>$</code> at the end of your prompt always shows where you are. After this command it should end in <code>/dbt/lake$</code>.</p>
+<p><strong>Check:</strong> your prompt starts with <code>(hmis-dbt)</code> and ends with <code>dbt/lake$</code>.</p>
+<h3 id="03-four-terminal-commands-you-will-use-all-the-time">0.3 Four terminal commands you will use all the time</h3>
+<div class="tw"><table><thead><tr><th>Command</th><th>What it does</th><th>Example</th></tr></thead><tbody><tr><td><code>pwd</code></td><td>Prints the folder you are in. Use it whenever you are not sure.</td><td><code>pwd</code></td></tr><tr><td><code>ls</code></td><td>Lists the files and folders here.</td><td><code>ls models/training</code></td></tr><tr><td><code>cd</code></td><td>Moves into a folder. <code>cd ..</code> moves one level up.</td><td><code>cd ../warehouse</code></td></tr><tr><td><code>cp</code></td><td>Copies a file. Useful for backups.</td><td><code>cp a.yml a.yml.bak</code></td></tr></tbody></table></div>
+<p>If a folder name contains spaces, put the whole path in double quotes, for example <code>cd &quot;my folder/sub folder&quot;</code>.</p>
+<h3 id="04-create-folders-and-files-in-vs-code">0.4 Create folders and files in VS Code</h3>
+<p>You will do this many times, and you never need the terminal for it.</p>
+<ul><li><p><strong>New folder:</strong> in the Explorer, right-click the folder where it should go, choose <strong>New Folder</strong>, type the name, and press Enter.</p></li><li><p><strong>New file:</strong> right-click the folder, choose <strong>New File</strong>, type the full name including the ending, for example <code>training_stg_population_values.sql</code>, and press Enter. The empty file opens on the right.</p></li><li><p><strong>Type or paste the content,</strong> then press <strong>Ctrl+S</strong> to save. If the tab shows a white dot instead of an x, the file is not saved yet and dbt will not see your change.</p></li><li><p><strong>Copy a file as a backup:</strong> right-click it, choose <strong>Copy</strong>, right-click the folder, choose <strong>Paste</strong>, then right-click the copy and choose <strong>Rename</strong>.</p></li></ul>
+<p>Two rules prevent most of the problems we saw in the training room:</p>
+<ol><li><p><strong>Folder names must be typed exactly as the guide says,</strong> and they must be nested in the order shown. A file in <code>models/lake/training</code> is a different place from <code>models/training/lake</code>, and dbt treats them differently.</p></li><li><p><strong>Always check which project you are in.</strong> The prompt must say <code>dbt/lake$</code> for the lake steps and <code>dbt/warehouse$</code> for the ClickHouse steps. Running a command in the wrong project is the second most common mistake.</p></li></ol>
+<h3 id="05-how-to-read-dbts-output">0.5 How to read dbt&#39;s output</h3>
+<p>Every dbt command prints a lot of lines. You only need to read three things.</p>
+<ul><li><p><strong>The model line.</strong> For example <code>OK created sql external model staging.training_stg_population_values</code>. <code>OK</code> means that model was built.</p></li><li><p><strong>The last line:</strong> <code>Done. PASS=2 WARN=0 ERROR=0 SKIP=0 TOTAL=2</code>. <code>PASS</code> is good. <code>WARN</code> is a warning that does not stop anything. <code>ERROR</code> means something failed, and the lines just above it say what.</p></li><li><p><strong>Red text.</strong> If something is red, read the first red line. It usually names the file and the line number of the problem.</p></li></ul>
+<h3 id="06-two-browser-tools-you-will-also-use">0.6 Two browser tools you will also use</h3>
+<ul><li><p><strong>Silo console</strong> at <code>http://localhost:9101</code>: the file browser for your data lake. Open the bucket <code>hmis-datalake</code> to see the landing, staging and intermediate folders and the files in them.</p></li><li><p><strong>ClickHouse Play</strong> at <code>http://localhost:8124/play</code>: a page where you type SQL and see the answer. The address, user and password are filled in at the top. Paste a query into the large box and press <strong>Ctrl+Enter</strong> to run it. Always select the old text with Ctrl+A first so you run only the new query.</p></li></ul>
+<h2 id="part-1-prepare-the-lake-project">Part 1: Prepare the lake project</h2>
+<p>Before you write any model, you tell dbt where your training models will live and how to build them. This is a one-time change to one configuration file. Take your time here: a wrong indentation in this file was the number one problem in our own rehearsal.</p>
+<h3 id="11-pause-the-live-pipeline-session-setup">1.1 Pause the live pipeline (session setup)</h3>
+<p>The production pipeline runs on a schedule in Prefect and rebuilds the models. Pause it before you start: open the Prefect page, go to <strong>Work Pools</strong>, open <code>hmis-process-pool</code>, and switch it to <strong>Paused</strong>. Remember to un-pause it when the session ends (see the last section).</p>
+<h3 id="12-make-a-backup-of-the-project-file">1.2 Make a backup of the project file</h3>
+<p>In VS Code, open the Explorer, go to <code>dbt/lake</code>, right-click <code>dbt_project.yml</code>, choose <strong>Copy</strong>, then right-click the <code>lake</code> folder and choose <strong>Paste</strong>. Right-click the copy, choose <strong>Rename</strong>, and call it <code>dbt_project.yml.bak</code>. Or, in the terminal inside <code>dbt/lake</code>, run:</p>
+<pre><code class="language-bash">cp dbt_project.yml dbt_project.yml.bak</code></pre>
+<p><strong>What it means:</strong> <code>cp</code> copies a file, so you now have <code>dbt_project.yml.bak</code> beside the original. If you ever break the file, you can copy the backup over it.</p>
+<p><strong>Check:</strong> run <code>ls</code> in <code>dbt/lake</code>. Both <code>dbt_project.yml</code> and <code>dbt_project.yml.bak</code> appear.</p>
+<h3 id="13-tell-dbt-about-the-training-folder">1.3 Tell dbt about the training folder</h3>
+<p><code>dbt_project.yml</code> is the settings file of the project. The block under <code>models:</code> says: &quot;models in this folder are built this way.&quot; You will add a new block for a folder called <code>training</code>.</p>
+<ol><li><p>Open <code>dbt/lake/dbt_project.yml</code> in VS Code.</p></li><li><p>Scroll to the <strong>very end</strong> of the file. The last lines belong to the <code>models:</code> section.</p></li><li><p>Click on the last line, press <strong>Shift+Home</strong> to select any spaces before the cursor, and press <strong>Delete</strong>, so the cursor is at the far left edge. This matters: VS Code often copies the indentation of the line above, which is the wrong amount.</p></li><li><p>Press Enter to start a new line, then paste this block, exactly as it is, including the spaces at the start of every line:</p></li></ol>
+<pre><code class="language-yaml">    training:
+      staging:
+        +materialized: external
+        +format: parquet
+        +schema: staging
+      intermediate:
+        +materialized: external
+        +format: parquet
+        +schema: intermediate</code></pre>
+<ol start="5"><li><p>Press <strong>Ctrl+S</strong> to save.</p></li></ol>
+<p><strong>Indentation is meaning.</strong> In YAML, the number of spaces in front of a line decides which line it belongs to. Use spaces, never the Tab key. The <code>training:</code> line must start in the same column as the other folder names that already exist under <code>hmis_lake:</code>. This is how the structure must look, where the first number is the count of spaces before the text:</p>
+<pre><code> 0  models:
+ 2    hmis_lake:
+ 4      (existing folders, for example: staging:)
+ 4      training:                  &lt;- your new block, same column as the folders above
+ 6        staging:
+ 8          +materialized: external
+ 8          +format: parquet
+ 8          +schema: staging
+ 6        intermediate:
+ 8          +materialized: external
+ 8          +format: parquet
+ 8          +schema: intermediate</code></pre>
+<p><strong>Check by eye:</strong> the first letter <code>t</code> of <code>training:</code> is exactly under the first letter of the existing folder names above it. VS Code draws thin vertical guide lines that help you see this. The red wavy lines VS Code puts under YAML words are normal for dbt files and can be ignored.</p>
+<p><strong>What each setting means.</strong></p>
+<div class="tw"><table><thead><tr><th>Setting</th><th>What it does</th></tr></thead><tbody><tr><td><code>training:</code></td><td>The folder name. It must match the folder <code>models/training</code> exactly.</td></tr><tr><td><code>staging:</code> and <code>intermediate:</code></td><td>The sub-folders. Models inside them get these settings.</td></tr><tr><td><code>+materialized: external</code></td><td>&quot;Materialized&quot; is how dbt stores a model. <code>external</code> makes dbt write the result as a real file in Silo instead of a table inside DuckDB.</td></tr><tr><td><code>+format: parquet</code></td><td>The file format. Parquet is a compact, fast format that ClickHouse can also read.</td></tr><tr><td><code>+schema: staging</code></td><td>Chooses the Silo folder the file is written to.</td></tr></tbody></table></div>
+<h3 id="14-check-the-salt">1.4 Check the salt</h3>
+<p>Staging will later store the data-entry user as a <strong>hash</strong>, a scrambled value that cannot be turned back into the name. The scrambling needs a secret ingredient called a salt, which lives in the environment variable <code>HMIS_HASH_SALT</code>. In the terminal, in <code>dbt/lake</code>, run:</p>
+<pre><code class="language-bash">echo ${HMIS_HASH_SALT:+salt is set}</code></pre>
+<p><strong>What it means:</strong> <code>echo</code> prints text. The odd-looking part prints <code>salt is set</code> only if the variable has a value, and prints nothing if it is empty. It never shows the secret itself.</p>
+<p>If it prints nothing, load it from the project&#39;s <code>.env</code> file:</p>
+<pre><code class="language-bash">export HMIS_HASH_SALT=$(grep &#39;^HMIS_HASH_SALT=&#39; ../../.env | cut -d= -f2-)</code></pre>
+<p><strong>What it means:</strong> <code>grep</code> finds the line that starts with <code>HMIS_HASH_SALT=</code> in the <code>.env</code> file two folders up, <code>cut</code> keeps only the part after the equals sign, and <code>export</code> stores it in your terminal for this session. If you open a new terminal later, you must run it again.</p>
+<p>Never type a value like <code>&lt;the class salt&gt;</code> with the angle brackets: those are a placeholder, not a real value.</p>
+<h3 id="15-check-that-dbt-can-connect">1.5 Check that dbt can connect</h3>
+<pre><code class="language-bash">dbt debug</code></pre>
+<p><strong>What it means:</strong> <code>dbt debug</code> checks that dbt can read your project files and reach the database. Run it in <code>dbt/lake</code> now and, later, in <code>dbt/warehouse</code>.</p>
+<p><strong>Check:</strong> the last line says <code>All checks passed!</code>. If not, read the red line above it. The most common causes are a missing <code>.env</code> value or being in the wrong folder.</p>
+<h3 id="16-create-a-small-helper-to-look-at-results">1.6 Create a small helper to look at results</h3>
+<p>After every step you will want to look at the first few rows of a model. dbt has a command for that, but it is long, so you will save it as a tiny script.</p>
+<ol><li><p>In <code>dbt/lake</code>, create a folder called <code>hica_steps</code>.</p></li><li><p>Inside it, create a file called <code>look.sh</code> with this content, then save it:</p></li></ol>
+<pre><code class="language-bash">model=&quot;$1&quot;; n=&quot;${2:-10}&quot;; cols=&quot;${3:-*}&quot;
+dbt show --inline &quot;select ${cols} from {{ ref(&#39;${model}&#39;) }}&quot; --limit &quot;${n}&quot;</code></pre>
+<p><strong>What it means:</strong> the script takes up to three words after its name. The first is the model name, the second is how many rows to show (10 if you leave it out), and the third is which columns (all of them if you leave it out). It then runs <code>dbt show --inline</code>, which runs a quick <code>select</code> and prints a preview without building anything.</p>
+<p>You will use it like this, from <code>dbt/lake</code>:</p>
+<pre><code class="language-bash">bash hica_steps/look.sh training_stg_population_values 5</code></pre>
+<p><strong>Check:</strong> nothing to run yet. You will try it in the first step.</p>
+<p><strong>How the helper file is created.</strong> <code>look.sh</code> is nothing special: it is a plain text file with two lines in it. You create it exactly like any other file in this guide. In the Explorer, right-click the <code>hica_steps</code> folder, choose <strong>New File</strong>, type <code>look.sh</code>, paste the two lines, and press Ctrl+S. The ending <code>.sh</code> tells everyone it is a shell script, which means a list of terminal commands saved in a file so you can run them again without retyping. Nothing needs to be installed.</p>
+<p><strong>Why we run it with <code>bash hica_steps/look.sh model_name 5</code>.</strong> Without the helper, every time you want to look at a model you would have to type this long command:</p>
+<pre><code class="language-bash">dbt show --inline &quot;select * from {{ ref(&#39;training_stg_population_values&#39;) }}&quot; --limit 5</code></pre>
+<p>The helper stores that command once, and you only type the short part that changes. Read the short command from left to right:</p>
+<div class="tw"><table><thead><tr><th>Part</th><th>Meaning</th></tr></thead><tbody><tr><td><code>bash</code></td><td>The program that reads a script file and runs the commands inside it. Putting <code>bash</code> in front means the file runs without any extra permission setting.</td></tr><tr><td><code>hica_steps/look.sh</code></td><td>The path to your file: the folder <code>hica_steps</code>, then the file <code>look.sh</code>. You run it from <code>dbt/lake</code>, so the path starts from there.</td></tr><tr><td><code>training_stg_population_values</code></td><td>The first word after the file name. The script receives it as <code>$1</code>. It is the name of the model you want to look at.</td></tr><tr><td><code>5</code></td><td>The second word, received as <code>$2</code>: how many rows to show. If you leave it out, the script uses 10.</td></tr><tr><td><code>&quot;period, year&quot;</code> (optional)</td><td>A third word, received as <code>$3</code>: which columns to show. If you leave it out, the script shows all of them.</td></tr></tbody></table></div>
+<p>Inside the script, <code>model=&quot;$1&quot;</code> copies the first word into a name called <code>model</code>. The odd-looking <code>${2:-10}</code> means &quot;use the second word, and if there is none, use 10&quot;, and <code>${3:-*}</code> means &quot;use the third word, and if there is none, use <code>*</code>, which means all columns&quot;. The last line then builds the <code>dbt show</code> command with those values filled in. You will use the helper for the first time in step 1.</p>
+<h2 id="part-2-build-the-staging-model-steps-1-to-8">Part 2: Build the staging model, steps 1 to 8</h2>
+<p>Staging turns the raw landing files into one tidy row per data value. You will build it in eight small steps, always editing the <strong>same file</strong>. Each step replaces the whole file with a slightly better version, so you see exactly what each new line of SQL adds.</p>
+<h3 id="create-the-folder-and-the-file-do-this-once">Create the folder and the file (do this once)</h3>
+<p>All commands in this part run in the terminal in <code>dbt/lake</code> (the prompt ends in <code>dbt/lake$</code>).</p>
+<ol><li><p>In the VS Code Explorer, open <code>dbt/lake/models</code>.</p></li><li><p>Right-click <code>models</code>, choose <strong>New Folder</strong>, and type <code>training</code>.</p></li><li><p>Right-click the new <code>training</code> folder, choose <strong>New Folder</strong>, and type <code>staging</code>. The path is now <code>dbt/lake/models/training/staging</code>.</p></li><li><p>Right-click <code>staging</code>, choose <strong>New File</strong>, and type <code>training_stg_population_values.sql</code>.</p></li></ol>
+<p>The folder names <code>training</code> and <code>staging</code> must match the names you wrote in <code>dbt_project.yml</code> in Part 1. That match is how dbt finds the settings for this file.</p>
+<p><strong>One rule for steps 1 to 8: you always work in this one file.</strong> The file starts empty, so in step 1 you simply paste. From step 2 onwards, each step gives you the <strong>complete new version</strong> of the file. To use it, click inside the file, press <strong>Ctrl+A</strong> to select everything, paste the new code so that it overwrites the old code, and press <strong>Ctrl+S</strong> to save. Do not paste it below the old code, and do not create a new file for each step. If you do, dbt will see two models with the same name, or two queries glued together, and it will fail. The same rule applies to the intermediate file in Part 3 and the gold file in Part 4.</p>
+<h3 id="step-1-read-the-raw-data">Step 1: Read the raw data</h3>
+<p><strong>Why:</strong> the smallest model possible. It only reads the raw data, so you can see what you are working with.</p>
+<p><strong>In VS Code:</strong> paste this into <code>training_stg_population_values.sql</code> and press Ctrl+S.</p>
+<pre><code class="language-sql">{{ config(materialized=&#39;view&#39;) }}
+
+select *
+from {{ source(&#39;landing&#39;, &#39;data_values&#39;) }}
+where dataset = &#39;population&#39;</code></pre>
+<p><strong>What each part means:</strong></p>
+<ul><li><p><code>{{ ... }}</code> double curly braces mean &quot;dbt, run this before sending the SQL to the database.&quot; It is called Jinja.</p></li><li><p><code>config(materialized=&#39;view&#39;)</code> tells dbt to store this model as a <strong>view</strong>, which is only a saved question. It stores no data.</p></li><li><p><code>source(&#39;landing&#39;, &#39;data_values&#39;)</code> points at a raw table that dbt did not create. Here it is the landing JSON files in Silo. The project already declares it.</p></li><li><p><code>where dataset = &#39;population&#39;</code> keeps only the Population files, because the landing area holds all datasets.</p></li></ul>
+<p><strong>In the terminal:</strong></p>
+<pre><code class="language-bash">dbt ls | grep training</code></pre>
+<p><code>dbt ls</code> lists everything dbt can see, and <code>grep training</code> keeps only the lines containing the word training. <strong>Check:</strong> you see <code>hmis_lake.training.staging.training_stg_population_values</code>. If you only see a warning about unused configuration, dbt cannot see your file. Check the folder names and that you saved.</p>
+<pre><code class="language-bash">dbt run -s training_stg_population_values</code></pre>
+<p><code>dbt run</code> builds models. <code>-s</code> means <strong>select</strong>: build only the model I name. <strong>Check:</strong> the last line says <code>PASS=1 ... ERROR=0</code>.</p>
+<pre><code class="language-bash">bash hica_steps/look.sh training_stg_population_values 5</code></pre>
+<p>This prints the first 5 rows. You will see columns such as <code>period</code>, <code>orgUnit</code>, <code>dataValues</code>, <code>filename</code> and <code>run_id</code>. Notice that <code>dataValues</code> holds a whole <strong>list</strong> of values packed into one cell. That is the problem we solve next.</p>
+<p>Two more questions are worth asking the data. First, what columns exist and what are their types?</p>
+<pre><code class="language-bash">dbt show --inline &quot;describe select * from {{ ref(&#39;training_stg_population_values&#39;) }}&quot;</code></pre>
+<p><code>describe</code> lists each column and its type. <code>dataValues</code> shows as a STRUCT, which is a group of named fields stored together. Second, how big is it?</p>
+<pre><code class="language-bash">dbt show --inline &quot;select count(distinct filename) as files, count(*) as payloads from {{ ref(&#39;training_stg_population_values&#39;) }}&quot;</code></pre>
+<p><strong>What it means:</strong> <code>ref(&#39;...&#39;)</code> points at another dbt model by name. <code>count(*)</code> counts rows, and <code>count(distinct filename)</code> counts different files. On the reference data this printed 17 files. Your own numbers will match the reference numbers only if you use the same landing data, so do not worry about small differences.</p>
+<h3 id="step-2-turn-the-list-into-rows">Step 2: Turn the list into rows</h3>
+<p><strong>Why:</strong> one landing row contains many data values. <code>unnest</code> turns the list into one row per value.</p>
+<p><strong>In VS Code:</strong> replace the whole file. Click inside the file, press Ctrl+A to select everything, paste the code below so that it overwrites the old code, and press Ctrl+S. Do not add it below the old code and do not create a new file.</p>
+<pre><code class="language-sql">{{ config(materialized=&#39;view&#39;) }}
+
+select
+    run_id,
+    unnest(dataValues) as dv
+from {{ source(&#39;landing&#39;, &#39;data_values&#39;) }}
+where dataset = &#39;population&#39;</code></pre>
+<p><strong>What it means:</strong> <code>unnest(dataValues)</code> produces one output row for every item in the list, and <code>as dv</code> names the new column. <code>run_id</code> is the identifier of the load run that brought the file in; we keep it because step 8 needs it.</p>
+<p><strong>In the terminal:</strong></p>
+<pre><code class="language-bash">dbt run -s training_stg_population_values
+bash hica_steps/look.sh training_stg_population_values 3 &quot;dv.*&quot;
+bash hica_steps/look.sh training_stg_population_values 1 &quot;count(*) as total_values&quot;</code></pre>
+<p>The second command shows what is inside <code>dv</code>: <code>dv.*</code> means &quot;every field of dv, as separate columns&quot;. You will see <code>dataElement</code>, <code>period</code>, <code>orgUnit</code>, <code>categoryOptionCombo</code>, <code>value</code> and more. The third command counts the rows. <strong>Check:</strong> the count is now bigger than the number of files, because every value has its own row. On the reference data it was 25,800.</p>
+<h3 id="step-3-pick-the-columns-you-need">Step 3: Pick the columns you need</h3>
+<p><strong>Why:</strong> a clean model exposes clear column names, not a packed struct.</p>
+<p><strong>In VS Code:</strong> replace the whole file. Click inside <code>training_stg_population_values.sql</code>, press <strong>Ctrl+A</strong> to select everything, paste the code below so that it overwrites the old code, and press <strong>Ctrl+S</strong>. Do not add it below the old code and do not create a new file.</p>
+<pre><code class="language-sql">{{ config(materialized=&#39;view&#39;) }}
+
+with unnested as (
+
+    select unnest(dataValues) as dv
+    from {{ source(&#39;landing&#39;, &#39;data_values&#39;) }}
+    where dataset = &#39;population&#39;
+
+)
+
+select
+    dv.dataElement as data_element_id,
+    dv.orgUnit     as org_unit_id,
+    dv.value       as value_raw
+from unnested</code></pre>
+<p><strong>What it means:</strong> <code>with unnested as ( ... )</code> is a <strong>CTE</strong>, a named step inside the query. You can read the file top to bottom as a recipe: first unnest, then pick columns. <code>dv.dataElement</code> reads the field called <code>dataElement</code> inside <code>dv</code>, and <code>as data_element_id</code> gives it a better name. The <code>_raw</code> suffix reminds us the value is still text.</p>
+<pre><code class="language-bash">dbt run -s training_stg_population_values
+bash hica_steps/look.sh training_stg_population_values 5
+dbt show --inline &quot;select count(*) as empty_org_units from {{ ref(&#39;training_stg_population_values&#39;) }} where org_unit_id is null&quot;</code></pre>
+<p><strong>Check:</strong> the last query counts rows with an empty org unit. If it is above 0, the next step fixes that. If it is 0 on your data, the next step is still a good safeguard, because other data sets do have gaps.</p>
+<h3 id="step-4-fill-the-gaps">Step 4: Fill the gaps</h3>
+<p><strong>Why:</strong> DHIS2 sometimes writes <code>orgUnit</code> and <code>period</code> once on the whole payload instead of on every value. Then the value&#39;s own field is empty (NULL).</p>
+<p><strong>In VS Code:</strong> replace the whole file. Click inside <code>training_stg_population_values.sql</code>, press <strong>Ctrl+A</strong> to select everything, paste the code below so that it overwrites the old code, and press <strong>Ctrl+S</strong>. Do not add it below the old code and do not create a new file.</p>
+<pre><code class="language-sql">{{ config(materialized=&#39;view&#39;) }}
+
+with unnested as (
+
+    select
+        orgUnit                as payload_org_unit,
+        period                 as payload_period,
+        unnest(dataValues)     as dv
+    from {{ source(&#39;landing&#39;, &#39;data_values&#39;) }}
+    where dataset = &#39;population&#39;
+
+)
+
+select
+    dv.dataElement                           as data_element_id,
+    dv.categoryOptionCombo                   as category_option_combo_id,
+    coalesce(dv.orgUnit, payload_org_unit)   as org_unit_id,
+    coalesce(dv.period, payload_period)      as period,
+    dv.value                                 as value_raw
+from unnested</code></pre>
+<p><strong>What it means:</strong> <code>coalesce(a, b)</code> returns <code>a</code>, or <code>b</code> if <code>a</code> is empty. So each value uses its own org unit if it has one, and the org unit of the whole payload otherwise.</p>
+<pre><code class="language-bash">dbt run -s training_stg_population_values
+bash hica_steps/look.sh training_stg_population_values 5
+dbt show --inline &quot;select period, count(*) as n from {{ ref(&#39;training_stg_population_values&#39;) }} group by period order by period&quot;</code></pre>
+<p>The last query counts values per period. <strong>Check:</strong> <code>period</code> is never empty. On the reference data there were two years: 2025 with 10,320 values and 2026 with 15,480.</p>
+<h3 id="step-5-make-the-value-a-number">Step 5: Make the value a number</h3>
+<p><strong>Why:</strong> <code>value_raw</code> is text, and you cannot add up text. We add a numeric version. We also change how the model is stored, from a view to a table.</p>
+<p><strong>In VS Code:</strong> replace the whole file. Click inside <code>training_stg_population_values.sql</code>, press <strong>Ctrl+A</strong> to select everything, paste the code below so that it overwrites the old code, and press <strong>Ctrl+S</strong>. Do not add it below the old code and do not create a new file.</p>
+<pre><code class="language-sql">{{ config(materialized=&#39;table&#39;) }}
+
+with unnested as (
+
+    select
+        orgUnit                as payload_org_unit,
+        period                 as payload_period,
+        unnest(dataValues)     as dv
+    from {{ source(&#39;landing&#39;, &#39;data_values&#39;) }}
+    where dataset = &#39;population&#39;
+
+)
+
+select
+    dv.dataElement                           as data_element_id,
+    dv.categoryOptionCombo                   as category_option_combo_id,
+    coalesce(dv.orgUnit, payload_org_unit)   as org_unit_id,
+    coalesce(dv.period, payload_period)      as period,
+    dv.value                                 as value_raw,
+    try_cast(dv.value as double)             as value_numeric
+from unnested</code></pre>
+<p><strong>What it means:</strong> <code>try_cast(x as double)</code> converts text to a decimal number, and gives an empty value instead of crashing when the text is not a number, for example &quot;n/a&quot;. The two lines <code>value_raw</code> and <code>value_numeric</code> keep the original and the converted value side by side, so nothing is lost.</p>
+<p>A <strong>view</strong> only saves the question and re-asks it every time. A <strong>table</strong> stores the answer, so later models read it quickly.</p>
+<pre><code class="language-bash">dbt run -s training_stg_population_values
+bash hica_steps/look.sh training_stg_population_values 5
+dbt show --inline &quot;select count(*) as not_numeric from {{ ref(&#39;training_stg_population_values&#39;) }} where value_numeric is null and value_raw is not null&quot;</code></pre>
+<p>The last query counts texts that could not become numbers. <strong>Check:</strong> the log line now says <code>table model</code>. On the reference data the count was 0, which means every value was a clean number.</p>
+<h3 id="step-6-understand-the-period-your-first-macro">Step 6: Understand the period (your first macro)</h3>
+<p><strong>Why:</strong> the period <code>2026</code> is only text. We want to know its type (yearly, monthly, weekly) and its start date. The project already contains <strong>macros</strong>, reusable pieces of SQL that someone wrote once. You call them by name inside double curly braces.</p>
+<p><strong>In VS Code:</strong> replace the whole file. Click inside <code>training_stg_population_values.sql</code>, press <strong>Ctrl+A</strong> to select everything, paste the code below so that it overwrites the old code, and press <strong>Ctrl+S</strong>. Do not add it below the old code and do not create a new file.</p>
+<pre><code class="language-sql">{{ config(materialized=&#39;table&#39;) }}
+
+with unnested as (
+
+    select
+        orgUnit                as payload_org_unit,
+        period                 as payload_period,
+        unnest(dataValues)     as dv
+    from {{ source(&#39;landing&#39;, &#39;data_values&#39;) }}
+    where dataset = &#39;population&#39;
+
+),
+
+restored as (
+
+    select
+        dv.dataElement                           as data_element_id,
+        dv.categoryOptionCombo                   as category_option_combo_id,
+        coalesce(dv.orgUnit, payload_org_unit)   as org_unit_id,
+        coalesce(dv.period, payload_period)      as period,
+        dv.value                                 as value_raw,
+        try_cast(dv.value as double)             as value_numeric
+    from unnested
+
+),
+
+typed as (
+
+    select
+        *,
+        {{ dhis2_period_type(&#39;period&#39;) }} as period_type
+    from restored
+
+)
+
+select
+    *,
+    {{ dhis2_period_start_date(&#39;period&#39;, &#39;period_type&#39;) }}         as period_start_date,
+    year({{ dhis2_period_start_date(&#39;period&#39;, &#39;period_type&#39;) }})   as year
+from typed</code></pre>
+<p><strong>What it means:</strong> the file now has three CTEs in a row: <code>unnested</code>, <code>restored</code>, <code>typed</code>. Each one builds on the one before. <code>dhis2_period_type(&#39;period&#39;)</code> is a macro: it looks at the shape of the text (four digits means yearly) and returns a type. <code>dhis2_period_start_date(...)</code> returns the first day of the period. <code>year(...)</code> extracts the year as a number. <code>select *</code> means &quot;all columns so far&quot;.</p>
+<pre><code class="language-bash">dbt run -s training_stg_population_values
+bash hica_steps/look.sh training_stg_population_values 5 &quot;period, period_type, period_start_date, year&quot;
+dbt compile -s training_stg_population_values</code></pre>
+<p><code>dbt compile</code> does not build anything. It prints the <strong>real SQL</strong> that dbt sends to the database after it replaces every <code>{{ ... }}</code>. Scroll through it: your one-line macro calls have become long <code>case when ... then ...</code> expressions, and <code>source()</code> has become a real <code>read_json(...)</code> call on the Silo files. This is the best way to understand what dbt does for you.</p>
+<p><strong>Check:</strong> <code>period_type</code> says <code>Yearly</code>, <code>period_start_date</code> is <code>2025-01-01</code> or <code>2026-01-01</code>, and <code>year</code> is 2025 or 2026.</p>
+<h3 id="step-7-look-before-you-fix-find-duplicates">Step 7: Look before you fix (find duplicates)</h3>
+<p><strong>Why:</strong> the landing folder keeps <strong>every</strong> load run. If a value was loaded twice, or corrected later, it appears more than once. A careful engineer looks for the problem before fixing it. Nothing in your files changes in this step.</p>
+<pre><code class="language-bash">dbt show --inline &quot;select data_element_id, org_unit_id, period, category_option_combo_id, count(*) as copies from {{ ref(&#39;training_stg_population_values&#39;) }} group by all having count(*) &gt; 1&quot; --limit 10</code></pre>
+<p><strong>What it means:</strong> a single value is identified by four things: the indicator, the org unit, the period and the category combination. <code>group by all</code> groups the rows by those four columns. <code>having count(*) &gt; 1</code> keeps only the groups that appear more than once. <code>--limit 10</code> prints at most 10 rows.</p>
+<p>Then count the whole picture:</p>
+<pre><code class="language-bash">dbt show --inline &quot;select count(*) as rows_total, count(distinct (data_element_id, org_unit_id, period, category_option_combo_id)) as distinct_values from {{ ref(&#39;training_stg_population_values&#39;) }}&quot;</code></pre>
+<p><strong>Read the result honestly.</strong> If <code>rows_total</code> is bigger than <code>distinct_values</code>, the difference is the number of extra copies. On the reference data it was 25,800 rows against 10,320 distinct values, so every value existed more than once. If both numbers are equal on your data, there are no duplicates today, and step 8 will not change your row count. It is still worth doing, because a future load can bring duplicates.</p>
+<h3 id="step-8-keep-only-the-newest-copy">Step 8: Keep only the newest copy</h3>
+<p><strong>Why:</strong> which copy should we keep? The newest. We rank the copies of each value from newest to oldest and keep number one. We also stop storing the model as a table and let it become a <strong>file in Silo</strong>.</p>
+<p><strong>In VS Code:</strong> replace the whole file. Click inside the file, press Ctrl+A to select everything, paste the code below so that it overwrites the old code, and press Ctrl+S. Do not add it below the old code and do not create a new file. Notice that the <code>config(...)</code> line at the top is gone on purpose.</p>
+<pre><code class="language-sql">with unnested as (
+
+    select
+        run_id,
+        orgUnit                as payload_org_unit,
+        period                 as payload_period,
+        unnest(dataValues)     as dv
+    from {{ source(&#39;landing&#39;, &#39;data_values&#39;) }}
+    where dataset = &#39;population&#39;
+
+),
+
+restored as (
+
+    select
+        run_id,
+        dv.dataElement                           as data_element_id,
+        dv.categoryOptionCombo                   as category_option_combo_id,
+        coalesce(dv.orgUnit, payload_org_unit)   as org_unit_id,
+        coalesce(dv.period, payload_period)      as period,
+        dv.value                                 as value_raw,
+        try_cast(dv.value as double)             as value_numeric,
+        dv.lastUpdated                           as last_updated_raw
+    from unnested
+
+),
+
+newest as (
+
+    select *
+    from restored
+    qualify row_number() over (
+        partition by data_element_id, org_unit_id, period, category_option_combo_id
+        order by run_id desc, last_updated_raw desc
+    ) = 1
+
+),
+
+typed as (
+
+    select *, {{ dhis2_period_type(&#39;period&#39;) }} as period_type
+    from newest
+
+)
+
+select
+    *,
+    {{ dhis2_period_start_date(&#39;period&#39;, &#39;period_type&#39;) }}         as period_start_date,
+    year({{ dhis2_period_start_date(&#39;period&#39;, &#39;period_type&#39;) }})   as year
+from typed</code></pre>
+<p><strong>What it means:</strong> <code>row_number() over (partition by ... order by ...)</code> gives a number to the rows inside each group. The <code>partition by</code> lists the four columns that identify one value, so each value forms its own group. <code>order by run_id desc, last_updated_raw desc</code> puts the newest copy first (<code>desc</code> means descending, biggest first). <code>qualify ... = 1</code> keeps only the row numbered 1 in each group. With no <code>config()</code> line in the file, the folder settings from Part 1 apply, so dbt writes a Parquet file.</p>
+<p>The three ways dbt can store a model, in one place:</p>
+<div class="tw"><table><thead><tr><th>Type</th><th>What is stored</th><th>When to use it</th></tr></thead><tbody><tr><td><code>view</code></td><td>Only the query. Nothing is copied.</td><td>Quick checks and thin layers.</td></tr><tr><td><code>table</code></td><td>The rows, inside the database.</td><td>Heavier results that are read often.</td></tr><tr><td><code>external</code></td><td>The rows, as a file in Silo.</td><td>Layers that other tools, such as ClickHouse, must read.</td></tr></tbody></table></div>
+<pre><code class="language-bash">dbt run -s training_stg_population_values</code></pre>
+<p><strong>Check 1:</strong> the log line now says <code>sql external model staging.training_stg_population_values</code>. The word <code>external</code> confirms the file was written to Silo.</p>
+<p><strong>Check 2:</strong> run the count again.</p>
+<pre><code class="language-bash">dbt show --inline &quot;select count(*) as rows_total, count(distinct (data_element_id, org_unit_id, period, category_option_combo_id)) as distinct_values from {{ ref(&#39;training_stg_population_values&#39;) }}&quot;</code></pre>
+<p>Both numbers are now equal. On the reference data they were both 10,320, so 15,480 duplicate rows disappeared without touching the raw data.</p>
+<p><strong>Check 3:</strong> open the Silo console at <code>http://localhost:9101</code>, open the bucket <code>hmis-datalake</code>, then the folder <code>staging/dhis2/</code>. You will see the file <code>training_stg_population_values.parquet</code>. That file is your staging layer, and later models read it through <code>ref()</code>.</p>
+<h2 id="part-3-build-the-intermediate-model-steps-9-to-11">Part 3: Build the intermediate model, steps 9 to 11</h2>
+<p>Staging gives you clean values, but every indicator and place is still a code such as <code>DTVRnCGamkV</code>. Nobody can read a report made of codes. The intermediate layer replaces codes with names. It also teaches the most important dbt idea: models that build on other models.</p>
+<h3 id="create-the-folder-and-the-file">Create the folder and the file</h3>
+<p>Still in the <code>lake</code> project.</p>
+<ol><li><p>In the Explorer, right-click <code>dbt/lake/models/training</code>, choose <strong>New Folder</strong>, and type <code>intermediate</code>.</p></li><li><p>Right-click <code>intermediate</code>, choose <strong>New File</strong>, and type <code>training_int_population_by_district.sql</code>.</p></li></ol>
+<p>The path must be <code>dbt/lake/models/training/intermediate/</code>. The name <code>intermediate</code> matches the second block you added to <code>dbt_project.yml</code>, so these models will also be written to Silo as Parquet files.</p>
+<h3 id="step-9-your-first-ref">Step 9: Your first ref()</h3>
+<p><strong>Why:</strong> <code>source()</code> points at raw data that dbt did not build. <code>ref()</code> points at a model that dbt did build. When you use <code>ref()</code>, dbt works out the build order for you: staging first, intermediate second.</p>
+<p><strong>In VS Code:</strong> paste into the new file and save.</p>
+<pre><code class="language-sql">select
+    data_element_id,
+    org_unit_id,
+    period,
+    year,
+    value_numeric
+from {{ ref(&#39;training_stg_population_values&#39;) }}</code></pre>
+<p><strong>What it means:</strong> this model reads your staging model by name. You do not write a file path, a database or a schema. dbt finds it.</p>
+<p><strong>In the terminal:</strong></p>
+<pre><code class="language-bash">dbt run -s +training_int_population_by_district</code></pre>
+<p><strong>What it means:</strong> a <code>+</code> in front of a model name means &quot;and everything it depends on, upstream&quot;. So dbt builds staging first and then intermediate. <strong>Check:</strong> you see <code>2 of 2 ... OK</code>, one line for each model, staging first. The warning about <code>unused configuration paths</code> for <code>training.intermediate</code>, which you may have seen earlier, is gone, because that folder now contains a model.</p>
+<pre><code class="language-bash">bash hica_steps/look.sh training_int_population_by_district 5</code></pre>
+<p><strong>Check:</strong> five rows with <code>data_element_id</code>, <code>org_unit_id</code>, <code>period</code>, <code>year</code> and <code>value_numeric</code>. The first two columns are still unreadable codes. The next steps fix that.</p>
+<h3 id="step-10-join-in-the-indicator-names">Step 10: Join in the indicator names</h3>
+<p><strong>Why:</strong> a <strong>join</strong> looks up each code in another table and brings back the name that belongs to it. Here we look up each <code>data_element_id</code> in <code>stg_dhis2__data_elements</code>, a model your production pipeline already built.</p>
+<p><strong>In VS Code:</strong> replace the whole file. Click inside the file, press Ctrl+A to select everything, paste the code below so that it overwrites the old code, and press Ctrl+S. Do not add it below the old code and do not create a new file.</p>
+<pre><code class="language-sql">select
+    p.year,
+    p.org_unit_id,
+    de.data_element_name,
+    p.value_numeric
+from {{ ref(&#39;training_stg_population_values&#39;) }} as p
+left join {{ ref(&#39;stg_dhis2__data_elements&#39;) }} as de
+    on de.data_element_id = p.data_element_id</code></pre>
+<p><strong>What it means:</strong></p>
+<ul><li><p><code>as p</code> and <code>as de</code> are short nicknames for the two tables, so you can write <code>p.year</code> and <code>de.data_element_name</code>.</p></li><li><p><code>left join</code> keeps <strong>every</strong> row from the left table (your population values), even when no name is found. In that case the name is left empty. An ordinary <code>join</code> would silently drop those rows, which is dangerous.</p></li><li><p><code>on de.data_element_id = p.data_element_id</code> says how the two tables match: the codes must be equal.</p></li></ul>
+<p><strong>In the terminal:</strong> from now on, name the models you want to build and do not use the <code>+</code>. Your intermediate model now depends on production models, and a <code>+</code> would rebuild them too.</p>
+<pre><code class="language-bash">dbt run -s training_int_population_by_district
+bash hica_steps/look.sh training_int_population_by_district 5
+dbt show --inline &quot;select count(*) as n, count(data_element_name) as with_name from {{ ref(&#39;training_int_population_by_district&#39;) }}&quot;</code></pre>
+<p><strong>Check:</strong> <code>data_element_name</code> now holds readable text such as &quot;Total population&quot;. The last query is your safety check on the join: <code>n</code> must equal the number of rows you had in staging after step 8 (10,320 on the reference data). If <code>n</code> is bigger, the join multiplied rows, and you must stop and find out why. <code>with_name</code> shows how many codes found their name; if it is lower than <code>n</code>, some codes have no name.</p>
+<h3 id="step-11-join-in-the-districts">Step 11: Join in the districts</h3>
+<p><strong>Why:</strong> we want results by district, not by org unit. A second join looks up each org unit in <code>int_dhis2__org_unit_hierarchy</code>, which knows which district every org unit belongs to. We also keep <code>period_start_date</code>, because the ClickHouse steps need it.</p>
+<p><strong>In VS Code:</strong> replace the whole file. Click inside <code>training_int_population_by_district.sql</code>, press <strong>Ctrl+A</strong> to select everything, paste the code below so that it overwrites the old code, and press <strong>Ctrl+S</strong>. Do not add it below the old code and do not create a new file.</p>
+<pre><code class="language-sql">select
+    p.year,
+    p.period_start_date,
+    p.org_unit_id,
+    ou.district_name,
+    de.data_element_name,
+    p.value_numeric
+from {{ ref(&#39;training_stg_population_values&#39;) }} as p
+left join {{ ref(&#39;stg_dhis2__data_elements&#39;) }} as de
+    on de.data_element_id = p.data_element_id
+left join {{ ref(&#39;int_dhis2__org_unit_hierarchy&#39;) }} as ou
+    on ou.org_unit_id = p.org_unit_id</code></pre>
+<p><strong>What it means:</strong> it is the same idea with a second join. A query can join as many tables as it needs, one <code>left join</code> after another.</p>
+<pre><code class="language-bash">dbt run -s training_int_population_by_district
+dbt show --inline &quot;select count(*) as n, count(district_name) as with_district, count(distinct district_name) as districts from {{ ref(&#39;training_int_population_by_district&#39;) }}&quot;
+bash hica_steps/look.sh training_int_population_by_district 5</code></pre>
+<p><strong>Check:</strong> <code>n</code> still equals your staging row count. <code>with_district</code> should be equal to <code>n</code> or close to it. <code>districts</code> is the number of different districts: 13 on the reference data, because the training data comes from the DHIS2 demo database, whose district names (Bo, Kenema, Kono and so on) are not your own country&#39;s. The last command shows rows with real district and indicator names next to the numbers.</p>
+<p>Open the Silo console again, go to <code>hmis-datalake</code>, then <code>intermediate/dhis2/</code>. The file <code>training_int_population_by_district.parquet</code> is your intermediate layer, and ClickHouse will read it in the next part.</p>
+<h2 id="part-4-move-to-clickhouse-steps-12-to-14">Part 4: Move to ClickHouse, steps 12 to 14</h2>
+<p>So far you worked in DuckDB, in the <code>lake</code> project. Dashboards need a fast database, so the data now moves to <strong>ClickHouse</strong>. ClickHouse is a different database, so it has its own dbt project, called <code>warehouse</code>, with its own settings file, its own <code>models</code> folder and its own <code>dbt_project.yml</code>. The steps look the same as before, but you do them in a different folder.</p>
+<h3 id="step-12-read-the-parquet-file-from-clickhouse">Step 12: Read the Parquet file from ClickHouse</h3>
+<p><strong>Why:</strong> ClickHouse can read the Parquet file straight from Silo, without copying it. You create a <strong>view</strong> that points at the file.</p>
+<p><strong>12a. Switch project in the terminal.</strong></p>
+<pre><code class="language-bash">cd ../warehouse</code></pre>
+<p><code>cd ..</code> goes up one level to <code>dbt</code>, and <code>/warehouse</code> goes down into the other project. <strong>Check:</strong> the prompt now ends with <code>dbt/warehouse$</code>. Every command in this part must be run here.</p>
+<p><strong>12b. Back up the settings file.</strong> In the Explorer, copy <code>dbt/warehouse/dbt_project.yml</code> and paste it into the same folder, then rename the copy to <code>dbt_project.yml.bak</code>. Or run <code>cp dbt_project.yml dbt_project.yml.bak</code> in the terminal. <strong>Check:</strong> <code>ls</code> shows both files.</p>
+<p><strong>12c. Add the training block.</strong> Open <code>dbt/warehouse/dbt_project.yml</code>. Go to the end of the file, below the <code>gold:</code> block that is already there. Click on the last line, press <strong>Shift+Home</strong> and <strong>Delete</strong> so the cursor is at the left edge, press Enter, and paste:</p>
+<pre><code class="language-yaml">    training:
+      lake:
+        +materialized: view
+        +schema: lake
+      gold:
+        +materialized: table
+        +engine: MergeTree()
+        +schema: gold</code></pre>
+<p>Save with Ctrl+S. The block must line up like this:</p>
+<pre><code> 0  models:
+ 2    hmis_warehouse:
+ 4      lake:                     (already there)
+ 6        +materialized: view
+ 4      gold:                     (already there)
+ 6        +materialized: table
+ 4      training:                 &lt;- new, same column as lake and gold
+ 6        lake:
+ 8          +materialized: view
+ 8          +schema: lake
+ 6        gold:
+ 8          +materialized: table
+ 8          +engine: MergeTree()
+ 8          +schema: gold</code></pre>
+<p><strong>Check by eye:</strong> the <code>t</code> of <code>training:</code> sits exactly under the <code>l</code> of <code>lake:</code> and the <code>g</code> of <code>gold:</code> above it, and the line that says <code>+schema: lake</code> really says <code>lake</code> (a typo here would send the view to the wrong place).</p>
+<p><strong>What the settings mean:</strong> a <code>view</code> in schema <code>lake</code> is a window onto the Parquet file. A <code>table</code> in schema <code>gold</code> stores rows. In ClickHouse a <strong>schema</strong> is a database name, and <code>engine: MergeTree()</code> is the table type used for fast reading and sorting.</p>
+<p><strong>12d. Create the folders and the file.</strong> This is the step where it is easiest to go wrong, so read it twice. In the Explorer:</p>
+<ol><li><p>Open <code>dbt/warehouse/models</code>.</p></li><li><p>Right-click <code>models</code>, choose <strong>New Folder</strong>, and type <code>training</code>.</p></li><li><p>Right-click the new <code>training</code> folder, choose <strong>New Folder</strong>, and type <code>lake</code>.</p></li><li><p>Right-click the folder <code>lake</code> <strong>that sits inside training</strong>, choose <strong>New File</strong>, and type <code>training_lake_population.sql</code>.</p></li></ol>
+<p>The path must be exactly <code>dbt/warehouse/models/training/lake/training_lake_population.sql</code>. It is <code>training</code> first, then <code>lake</code>, never the other way round. Paste this and save:</p>
+<pre><code class="language-sql">select *
+from {{ silo_parquet(&#39;intermediate&#39;, &#39;training_int_population_by_district&#39;) }}</code></pre>
+<p><strong>What it means:</strong> <code>silo_parquet(...)</code> is a macro that writes the ClickHouse function <code>s3(...)</code> for you. That function reads a Parquet file from Silo. You name the folder (<code>intermediate</code>) and the model (<code>training_int_population_by_district</code>), and the macro builds the rest. Because this is a view, nothing is copied: every query reads the file again.</p>
+<p><strong>Check the folders from the terminal:</strong></p>
+<pre><code class="language-bash">find models -name &quot;training*&quot;</code></pre>
+<p><code>find</code> searches folders for names that match. You should see <code>models/training</code> and <code>models/training/lake/training_lake_population.sql</code> (the <code>lake</code> folder itself is not listed because its name does not start with <code>training</code>). If you see <code>models/lake/training/...</code> the folders are the wrong way round: move the file into <code>models/training/lake/</code>.</p>
+<p><strong>12e. Test the connection and build the view.</strong></p>
+<pre><code class="language-bash">dbt debug
+dbt run -s training_lake_population</code></pre>
+<p><strong>Check:</strong> <code>dbt debug</code> ends with <code>All checks passed!</code>. In the run log, look at the model line: it must say <code>`lake`.`training_lake_population`</code>. If it says <code>gold</code>, dbt did not apply your settings, which means the file is in the wrong folder. A warning that <code>models.hmis_warehouse.training.gold</code> is unused is normal for now: you have not created a model in that folder yet.</p>
+<p><strong>12f. Look at the data in ClickHouse.</strong> SQL for ClickHouse goes into the <strong>browser</strong>, not the terminal. Open <code>http://localhost:8124/play</code>, click in the big box, press Ctrl+A, paste this and press Ctrl+Enter:</p>
+<pre><code class="language-sql">select count(*), uniqExact(district_name) from lake.training_lake_population</code></pre>
+<p><code>count(*)</code> counts rows and <code>uniqExact(...)</code> counts different values. <strong>Check:</strong> the row count equals your intermediate model (10,320 on the reference data) and the district count is the same as before (13). That proves ClickHouse can read your Parquet file from Silo.</p>
+<h3 id="step-13-your-first-gold-table">Step 13: Your first gold table</h3>
+<p><strong>Why:</strong> gold is the table a dashboard reads. The view gives one row per value. Now we add the values up per district, year and indicator, and ClickHouse <strong>stores</strong> the result.</p>
+<p><strong>In VS Code:</strong> create the gold folder in the right place. Right-click the <code>training</code> folder (the one directly under <code>models</code>, next to <code>lake</code>), choose <strong>New Folder</strong>, and type <code>gold</code>. The path must be <code>dbt/warehouse/models/training/gold</code>. Then right-click <code>gold</code>, choose <strong>New File</strong>, type <code>training_fct_population_district_year.sql</code>, paste this and save:</p>
+<pre><code class="language-sql">{{ config(order_by = &#39;(year, district_name)&#39;) }}
+
+select
+    toYear(ifNull(period_start_date, toDate32(&#39;1970-01-01&#39;)))  as year,
+    ifNull(district_name, &#39;&#39;)                                  as district_name,
+    data_element_name,
+    sum(value_numeric)                                         as value
+from {{ ref(&#39;training_lake_population&#39;) }}
+group by year, district_name, data_element_name</code></pre>
+<p><strong>What each part means:</strong></p>
+<ul><li><p><code>ref(&#39;training_lake_population&#39;)</code> points at your ClickHouse view, so dbt builds the view first and the table second.</p></li><li><p><code>group by</code> plus <code>sum()</code> collapses many rows into one row for every district, year and indicator, and adds their values.</p></li><li><p><code>config(order_by = ...)</code> sets the <strong>sort key</strong> of the table. ClickHouse tables must be sorted on something, and sorting on year and district makes the typical dashboard filters fast.</p></li><li><p><code>ifNull(x, y)</code> means &quot;x, or y if x is empty&quot;. A ClickHouse sort key may not contain empty values, so we fill the gaps. <code>toYear(...)</code> extracts the year from a date.</p></li><li><p>This model is a <strong>table</strong>, not a view, because the <code>gold</code> settings you added say so. The result is stored, so dashboards read it quickly and do not read the Parquet file every time.</p></li></ul>
+<p><strong>In the terminal (in <code>dbt/warehouse</code>):</strong></p>
+<pre><code class="language-bash">dbt run -s training_fct_population_district_year</code></pre>
+<p><strong>Check:</strong> the log line says <code>sql table model `gold`.`training_fct_population_district_year`</code> and the warning about unused configuration is gone. Then, in ClickHouse Play (press Ctrl+A before pasting):</p>
+<pre><code class="language-sql">select count(*), uniqExact(district_name), uniqExact(data_element_name) from gold.training_fct_population_district_year</code></pre>
+<p><strong>Check:</strong> on the reference data this gave 130 rows, 13 districts and 5 indicators. The rows come from 13 districts times 2 years times 5 indicators. Your numbers follow the same arithmetic. Then look at a few rows:</p>
+<pre><code class="language-sql">select * from gold.training_fct_population_district_year order by year, district_name limit 10</code></pre>
+<h3 id="step-14-one-column-per-indicator-pivot">Step 14: One column per indicator (pivot)</h3>
+<p><strong>Why:</strong> a dashboard wants one row per district and year, with a separate column for each indicator, not five rows. Turning rows into columns is called a <strong>pivot</strong>.</p>
+<p>First learn the exact indicator names in your data, because the pivot has to spell them exactly. In Play:</p>
+<pre><code class="language-sql">select data_element_name, count(*) as n from lake.training_lake_population group by data_element_name order by data_element_name</code></pre>
+<p>On the reference data the five names were:</p>
+<div class="tw"><table><thead><tr><th>Indicator name in the data</th><th>Column we will create</th></tr></thead><tbody><tr><td><code>Total Population</code></td><td><code>total_population</code></td></tr><tr><td><code>Total population &lt; 1 year</code></td><td><code>under1_population</code></td></tr><tr><td><code>Total population &lt; 5 years</code></td><td><code>under5_population</code></td></tr><tr><td><code>Population of women of child bearing age (WRA)</code></td><td><code>women_of_child_bearing_age</code></td></tr><tr><td><code>Expected pregnancies</code></td><td><code>expected_pregnancies</code></td></tr></tbody></table></div>
+<p><strong>In VS Code:</strong> open the same gold file and replace the whole file. Click inside it, press Ctrl+A to select everything, paste the code below so that it overwrites the old code, and press Ctrl+S. Do not add it below the old code and do not create a new file. If your names differ, change the text inside the quotes to match your own list.</p>
+<pre><code class="language-sql">{{ config(order_by = &#39;(year, district_name)&#39;) }}
+
+select
+    toYear(ifNull(period_start_date, toDate32(&#39;1970-01-01&#39;)))  as year,
+    ifNull(district_name, &#39;&#39;)                                  as district_name,
+    sumIf(value_numeric, data_element_name = &#39;Total Population&#39;)                                as total_population,
+    sumIf(value_numeric, data_element_name = &#39;Total population &lt; 1 year&#39;)                       as under1_population,
+    sumIf(value_numeric, data_element_name = &#39;Total population &lt; 5 years&#39;)                      as under5_population,
+    sumIf(value_numeric, data_element_name = &#39;Population of women of child bearing age (WRA)&#39;)  as women_of_child_bearing_age,
+    sumIf(value_numeric, data_element_name = &#39;Expected pregnancies&#39;)                            as expected_pregnancies,
+    count()                                                                                     as value_count
+from {{ ref(&#39;training_lake_population&#39;) }}
+group by year, district_name</code></pre>
+<p><strong>What it means:</strong> <code>sumIf(value, condition)</code> adds up only the rows where the condition is true. Each column asks for the total of one indicator, so one row now holds all five. <code>count()</code> shows how many values fed each row. Be careful with spelling and capital letters: the first name is <code>Total Population</code> with a capital P, while the others use a lowercase p. A name that does not match does not cause an error. It silently gives 0, so check that every column shows a real number.</p>
+<pre><code class="language-bash">dbt run -s training_fct_population_district_year</code></pre>
+<p>In Play:</p>
+<pre><code class="language-sql">select count(*) from gold.training_fct_population_district_year</code></pre>
+<pre><code class="language-sql">select * from gold.training_fct_population_district_year where district_name = &#39;Bo&#39; order by year</code></pre>
+<p><strong>Check:</strong> the row count is the number of districts times the number of years (26 on the reference data). Every indicator column has a real number. Compare with the long table from step 13: the same district, year and indicator must give the same number in both. For Bo in 2025 the reference run showed 523,015 for <code>total_population</code> and 23,012 for <code>expected_pregnancies</code> in both versions, so the pivot lost nothing.</p>
+<p>You now have a working pipeline from raw files to a dashboard-ready table. The next part makes sure it stays correct.</p>
+<h2 id="part-5-test-your-models-step-15">Part 5: Test your models, step 15</h2>
+<p>A pipeline that runs is not the same as a pipeline that is right. <strong>Tests</strong> are small automatic checks that run on your data every time. If the data breaks a rule, the test says so before a wrong number reaches a dashboard.</p>
+<p>dbt has two kinds of tests:</p>
+<div class="tw"><table><thead><tr><th>Kind</th><th>Where you write it</th><th>How it works</th></tr></thead><tbody><tr><td>Generic test</td><td>In a <code>.yml</code> file next to your models</td><td>You attach a ready-made rule to a column, such as <code>not_null</code> (no empty values) or <code>accepted_values</code> (only allowed values).</td></tr><tr><td>Singular test</td><td>A <code>.sql</code> file in the <code>tests</code> folder</td><td>You write a query that returns the <strong>bad rows</strong>. If it returns nothing, the test passes.</td></tr></tbody></table></div>
+<p>A test result is <strong>PASS</strong>, <strong>WARN</strong> (a rule is broken but marked as a warning) or <strong>FAIL</strong> (a rule is broken and marked as an error).</p>
+<h3 id="step-15a-generic-tests-for-the-lake-models">Step 15a: Generic tests for the lake models</h3>
+<p><strong>In VS Code</strong>, in <code>dbt/lake/models/training</code>, create a file called <code>_training__models.yml</code>. It sits directly inside <code>training</code>, next to the <code>staging</code> and <code>intermediate</code> folders. Paste and save:</p>
+<pre><code class="language-yaml">version: 2
+
+models:
+  - name: training_stg_population_values
+    columns:
+      - name: data_element_id
+        data_tests: [not_null]
+      - name: org_unit_id
+        data_tests: [not_null]
+      - name: period_type
+        data_tests:
+          - accepted_values:
+              arguments: {values: [&#39;Yearly&#39;]}
+              config: {severity: warn}
+      - name: value_numeric
+        data_tests:
+          - not_null:
+              config: {severity: warn}
+
+  - name: training_int_population_by_district
+    columns:
+      - name: data_element_name
+        data_tests: [not_null]
+      - name: district_name
+        data_tests:
+          - not_null:
+              config: {severity: warn}</code></pre>
+<p><strong>What it means:</strong> each <code>- name:</code> under <code>models</code> is a model, and each <code>- name:</code> under <code>columns</code> is one of its columns. <code>data_tests</code> lists the rules for that column. Rules marked <code>severity: warn</code> report a problem without stopping anything. For example, a non-numeric value is worth knowing about, but it is not a disaster.</p>
+<h3 id="step-15b-a-singular-test-for-duplicates">Step 15b: A singular test for duplicates</h3>
+<p><strong>In VS Code</strong>, in <code>dbt/lake/tests</code>, create <code>assert_training_population_grain_is_unique.sql</code>, paste and save:</p>
+<pre><code class="language-sql">select data_element_id, org_unit_id, period, category_option_combo_id, count(*) as n
+from {{ ref(&#39;training_stg_population_values&#39;) }}
+group by all
+having count(*) &gt; 1</code></pre>
+<p><strong>What it means:</strong> this is the duplicate query from step 7. Staging must have exactly one row per value, so any row this query returns is a duplicate, and the test fails. An empty result passes.</p>
+<h3 id="step-15c-run-the-lake-tests">Step 15c: Run the lake tests</h3>
+<p>In the terminal, in <code>dbt/lake</code>:</p>
+<pre><code class="language-bash">dbt test -s training_stg_population_values training_int_population_by_district assert_training_population_grain_is_unique</code></pre>
+<p><strong>What it means:</strong> <code>dbt test</code> runs the tests that belong to the models you name, plus the singular test you named. <strong>Check:</strong> the last line reads <code>Done. PASS=... WARN=... ERROR=0</code>. A warning is acceptable. An <code>ERROR</code> means a rule is broken: read the test name to see which one, and fix the model.</p>
+<h3 id="step-15d-tests-for-the-clickhouse-models">Step 15d: Tests for the ClickHouse models</h3>
+<p>In the terminal, move to the warehouse: <code>cd ../warehouse</code>.</p>
+<p><strong>In VS Code</strong>, in <code>dbt/warehouse/models/training</code>, create <code>_training__models.yml</code> and paste:</p>
+<pre><code class="language-yaml">version: 2
+
+models:
+  - name: training_fct_population_district_year
+    columns:
+      - name: district_name
+        data_tests: [not_null]
+      - name: year
+        data_tests: [not_null]
+      - name: under1_population
+        data_tests: [not_null]</code></pre>
+<p>Then, in <code>dbt/warehouse/tests</code>, create <code>assert_training_population_matches_production.sql</code>:</p>
+<pre><code class="language-sql">with production as (
+    select
+        toYear(ifNull(period_start_date, toDate32(&#39;1970-01-01&#39;)))   as year,
+        ifNull(district_name, &#39;&#39;)                                   as district_name,
+        sumIf(value_numeric, data_element_name = &#39;Total population &lt; 1 year&#39;) as under1_population
+    from {{ ref(&#39;lake_dhis2__data_values&#39;) }}
+    where data_set_name = &#39;Population&#39; and period_type = &#39;Yearly&#39;
+    group by year, district_name
+)
+select t.year, t.district_name, t.under1_population, p.under1_population as production_value
+from {{ ref(&#39;training_fct_population_district_year&#39;) }} as t
+inner join production as p on p.year = t.year and p.district_name = t.district_name
+where abs(t.under1_population - p.under1_population) &gt; 0.5</code></pre>
+<p><strong>What it means:</strong> this is the most valuable test in the guide. It computes the same figure from the <strong>production</strong> pipeline and compares it with your training table. It returns the districts where the two disagree by more than 0.5. If your small pipeline and the real one agree everywhere, the result is empty and the test passes.</p>
+<pre><code class="language-bash">dbt run -s training_lake_population training_fct_population_district_year
+dbt test -s training_fct_population_district_year assert_training_population_matches_production</code></pre>
+<p><strong>Check:</strong> <code>PASS=4 WARN=0 ERROR=0</code> on the reference data. If the comparison test fails, the output shows which districts differ. Your gold table does not agree with production for those districts, so look at the indicator names and the district names first.</p>
+<h3 id="step-15e-see-a-test-fail-on-purpose">Step 15e: See a test fail on purpose</h3>
+<p>Students should see a failure once, in a safe place. In <code>dbt/lake/tests/assert_training_population_grain_is_unique.sql</code>, change <code>having count(*) &gt; 1</code> to <code>having count(*) &gt;= 1</code>, save, and run the test again from <code>dbt/lake</code>:</p>
+<pre><code class="language-bash">dbt test -s assert_training_population_grain_is_unique</code></pre>
+<p>Now every group counts as bad, so the test returns many rows and shows <code>FAIL</code> with the number of rows it found. That is what a broken rule looks like. Change <code>&gt;=</code> back to <code>&gt;</code>, save, and run it again to see it pass. Nothing about your data was changed.</p>
+<h3 id="optional-compare-with-the-finished-version">Optional: compare with the finished version</h3>
+<p>A finished version of the models is available in the shared training folder. It adds a unique key for each value (<code>population_value_key</code>) and stores the data-entry user only as a salted hash, so that personal data never leaves staging. The intermediate layer then drops that column completely, which is a privacy rule worth explaining to students. If you have access to that folder, copy the finished files, rebuild with explicit model names (never with a <code>+</code>) and run all the tests in <code>dbt/lake</code>:</p>
+<pre><code class="language-bash">dbt run -s training_stg_population_values training_int_population_by_district
+dbt test -s training_stg_population_values training_int_population_by_district assert_training_population_grain_is_unique</code></pre>
+<p>Before you copy them, save your own versions somewhere safe. Which columns are new? Why is the user name hashed in staging and removed in intermediate? These are good questions to discuss as a group.</p>
+<h3 id="what-dbt-build-does">What <code>dbt build</code> does</h3>
+<p><code>dbt build</code> is <code>dbt run</code> and <code>dbt test</code> combined: it builds each model and immediately tests it, in the right order. The production pipeline in Prefect uses <code>dbt build</code>. Now you know what each of its parts does.</p>
+<h2 id="troubleshooting-the-mistakes-people-actually-make">Troubleshooting: the mistakes people actually make</h2>
+<p>Every problem below happened to someone during our own rehearsal. When something goes wrong, first check <strong>which folder you are in</strong>, <strong>whether you saved the file</strong>, and <strong>what the first red line says</strong>. Most problems are one of those three.</p>
+<div class="tw"><table><thead><tr><th>What you see</th><th>Likely cause</th><th>What to do</th></tr></thead><tbody><tr><td><code>dbt: command not found</code></td><td>The Python environment is not active.</td><td>Run <code>source ~/venvs/hmis-dbt/bin/activate</code>. The prompt must start with <code>(hmis-dbt)</code>.</td></tr><tr><td><code>./hica_steps/look.sh: No such file or directory</code> or <code>Permission denied</code></td><td>You are in the wrong folder, or the script is not marked as runnable.</td><td>Check that the prompt ends in <code>dbt/lake$</code>, and run it as <code>bash hica_steps/look.sh model_name 5</code>.</td></tr><tr><td><code>dbt ls | grep training</code> shows only a warning, and no model</td><td>dbt cannot see your file: the file is empty, not saved, or in the wrong folder.</td><td>Run <code>find models -name &quot;training*&quot;</code> and compare with the paths in this guide. Check that the tab in VS Code has no white dot (saved).</td></tr><tr><td>Warning: <code>Configuration paths exist in your dbt_project.yml file which do not apply to any resources</code></td><td>A folder named in <code>dbt_project.yml</code> has no model yet, or the model sits in a different folder.</td><td>Normal until you create a model in that folder. If it stays after you created one, the folder names or their nesting are wrong.</td></tr><tr><td>The ClickHouse view was created in <code>gold</code>, not <code>lake</code></td><td>The model file is not in <code>models/training/lake/</code>. It may be in <code>models/training/</code> or in <code>models/lake/training/</code> (nesting the wrong way round).</td><td>Move the file to <code>models/training/lake/</code>, run it again, then remove the stray view in Play with <code>drop view if exists gold.training_lake_population</code>.</td></tr><tr><td>An error about YAML, or your settings seem ignored</td><td>Wrong indentation in <code>dbt_project.yml</code>, or a Tab was used.</td><td>Compare with the space-count picture in Part 1 or step 12. Use spaces only. To start over, copy the backup: <code>cp dbt_project.yml.bak dbt_project.yml</code>.</td></tr><tr><td><code>syntax error near unexpected token</code> after typing <code>export HMIS_HASH_SALT=&lt;...&gt;</code></td><td>You typed a placeholder, including the angle brackets.</td><td>Use the real value, or load it from <code>.env</code> with the <code>grep</code> command from step 1.4.</td></tr><tr><td>An error that <code>HMIS_HASH_SALT</code> is missing or too short</td><td>The terminal does not know the salt, or it has fewer than 16 characters.</td><td>Run the <code>export</code> from step 1.4 again. Every new terminal needs it.</td></tr><tr><td><code>Command &#39;drop&#39; not found</code>, or a similar message when you pasted SQL</td><td>SQL for ClickHouse was pasted into the terminal.</td><td>Open <code>http://localhost:8124/play</code> in the browser, and paste it there.</td></tr><tr><td>A compile error that mentions <code>{{</code> in a model that looks fine</td><td>Double curly braces were written inside a SQL comment. dbt still tries to run them.</td><td>Remove the curly braces from comments, or delete the comment.</td></tr><tr><td>The row count goes up after a join</td><td>The lookup table has several rows for one code, so the join multiplied your rows.</td><td>Compare <code>count(*)</code> before and after each join. Find the code with more than one match before you continue.</td></tr><tr><td>An indicator column in the pivot shows 0</td><td>The name in <code>sumIf(... = &#39;name&#39;)</code> does not match the data exactly, including capital letters and spaces.</td><td>List the names with the query in step 14, and copy them exactly.</td></tr><tr><td><code>dbt run -s +model</code> builds models you did not write</td><td>The <code>+</code> also builds everything upstream, which now includes production models.</td><td>Name only your own models, for example <code>dbt run -s training_stg_population_values training_int_population_by_district</code>.</td></tr><tr><td><code>Could not set lock on file</code></td><td>Another dbt process, for example a scheduled run, is using the same DuckDB file.</td><td>Wait for it to finish, or open the Prefect page and check that the pool hmis-process-pool is paused (step 1.1).</td></tr><tr><td><code>dbt debug</code> fails for the ClickHouse project</td><td>The wrong folder, a missing <code>.env</code> value, or ClickHouse is not running.</td><td>Check that the prompt ends in <code>dbt/warehouse$</code>, then open http://localhost:8124/play in the browser. If the page does not load, ClickHouse is not running: stop and ask for help in the session.</td></tr><tr><td>Your change has no effect</td><td>The file was not saved, or you ran the command in the other project.</td><td>Press Ctrl+S, check the prompt, and run the command again.</td></tr></tbody></table></div>
+<p>If you are stuck for more than five minutes, copy the <strong>last red line</strong> from the terminal, or take a screenshot of the whole terminal, and post it in the session chat or raise your hand. A full screenshot shows the folder, the command and the error, which is everything needed to help.</p>
+<h2 id="cheat-sheet-every-command-and-every-word">Cheat sheet: every command and every word</h2>
+<h3 id="commands-you-used">Commands you used</h3>
+<div class="tw"><table><thead><tr><th>Command</th><th>What it does</th></tr></thead><tbody><tr><td><code>source ~/venvs/hmis-dbt/bin/activate</code></td><td>Switches on the Python environment that contains dbt.</td></tr><tr><td><code>cd dbt/lake</code>, <code>cd ../warehouse</code></td><td>Moves into a folder. <code>..</code> means one level up.</td></tr><tr><td><code>pwd</code>, <code>ls</code></td><td>Shows where you are, and lists what is in the folder.</td></tr><tr><td><code>cp a b</code></td><td>Copies file <code>a</code> to <code>b</code>. Used for backups.</td></tr><tr><td><code>find models -name &quot;training*&quot;</code></td><td>Searches the <code>models</code> folder for names starting with <code>training</code>.</td></tr><tr><td><code>export NAME=value</code></td><td>Stores a value in your terminal for this session.</td></tr><tr><td><code>dbt debug</code></td><td>Checks that dbt can read the project and reach the database.</td></tr><tr><td><code>dbt ls</code></td><td>Lists everything dbt can see in the project.</td></tr><tr><td><code>dbt run -s model</code></td><td>Builds the named model. <code>-s</code> means select.</td></tr><tr><td><code>dbt run -s +model</code></td><td>Builds the model and everything it depends on. Use with care.</td></tr><tr><td><code>dbt compile -s model</code></td><td>Prints the real SQL dbt would run, without running it.</td></tr><tr><td><code>dbt show --inline &quot;select ...&quot;</code></td><td>Runs a quick query and prints a preview. Builds nothing.</td></tr><tr><td><code>dbt test -s model</code></td><td>Runs the tests that belong to the model.</td></tr><tr><td><code>dbt build</code></td><td>Runs models and tests together, in order. Used by the scheduled pipeline.</td></tr><tr><td><code>bash hica_steps/look.sh model 5</code></td><td>Your helper: shows the first 5 rows of a model.</td></tr></tbody></table></div>
+<h3 id="the-sql-you-met">The SQL you met</h3>
+<div class="tw"><table><thead><tr><th>Word</th><th>Meaning</th></tr></thead><tbody><tr><td><code>select ... from ...</code></td><td>Choose columns from a table.</td></tr><tr><td><code>where</code></td><td>Keep only the rows that match.</td></tr><tr><td><code>as</code></td><td>Give a column or table a new name.</td></tr><tr><td><code>with name as ( ... )</code></td><td>A CTE: a named step inside a query, read from top to bottom.</td></tr><tr><td><code>unnest(list)</code></td><td>Turn a list in one cell into one row per item.</td></tr><tr><td><code>coalesce(a, b)</code></td><td>Use <code>a</code>, and <code>b</code> if <code>a</code> is empty.</td></tr><tr><td><code>try_cast(x as double)</code></td><td>Turn text into a number, or empty if that is not possible.</td></tr><tr><td><code>group by</code>, <code>count()</code>, <code>sum()</code></td><td>Group rows and count or add them.</td></tr><tr><td><code>sumIf(value, condition)</code></td><td>Add only the rows where the condition is true.</td></tr><tr><td><code>left join ... on ...</code></td><td>Bring in columns from another table, keeping every row of the first one.</td></tr><tr><td><code>row_number() over (partition by ... order by ...)</code> and <code>qualify</code></td><td>Number the rows in each group, then keep the ones you choose.</td></tr><tr><td><code>ifNull(x, y)</code></td><td>Use <code>x</code>, and <code>y</code> if <code>x</code> is empty (ClickHouse).</td></tr></tbody></table></div>
+<h3 id="the-dbt-words">The dbt words</h3>
+<div class="tw"><table><thead><tr><th>Word</th><th>Meaning</th></tr></thead><tbody><tr><td>Model</td><td>A <code>.sql</code> file with one <code>select</code>. dbt turns it into a table, a view or a file.</td></tr><tr><td><code>source()</code></td><td>Points at raw data that dbt did not build.</td></tr><tr><td><code>ref()</code></td><td>Points at another model. dbt uses it to decide the build order.</td></tr><tr><td><code>config()</code></td><td>Settings for one model, written at the top of the file.</td></tr><tr><td>Materialization</td><td>How a model is stored: <code>view</code>, <code>table</code> or <code>external</code>.</td></tr><tr><td>Macro</td><td>Reusable SQL you call by name inside double curly braces.</td></tr><tr><td>Jinja</td><td>The <code>{{ ... }}</code> templating that dbt runs before sending SQL to the database.</td></tr><tr><td>Test</td><td>A check on the data. Generic tests are written in YAML. Singular tests are SQL files that return bad rows.</td></tr><tr><td>Parquet</td><td>A compact file format for tables, readable by both DuckDB and ClickHouse.</td></tr><tr><td>Hash</td><td>A scrambled version of a value that cannot be turned back. A salt makes it harder to guess.</td></tr></tbody></table></div>
+<h3 id="where-every-file-lives">Where every file lives</h3>
+<div class="tw"><table><thead><tr><th>File or folder</th><th>Project</th><th>What it is</th></tr></thead><tbody><tr><td><code>dbt/lake/dbt_project.yml</code></td><td>lake</td><td>Settings, including the <code>training</code> block you added.</td></tr><tr><td><code>dbt/lake/models/training/staging/training_stg_population_values.sql</code></td><td>lake</td><td>Staging model, built in steps 1 to 8.</td></tr><tr><td><code>dbt/lake/models/training/intermediate/training_int_population_by_district.sql</code></td><td>lake</td><td>Intermediate model, built in steps 9 to 11.</td></tr><tr><td><code>dbt/lake/models/training/_training__models.yml</code></td><td>lake</td><td>Generic tests for the lake models.</td></tr><tr><td><code>dbt/lake/tests/assert_training_population_grain_is_unique.sql</code></td><td>lake</td><td>Singular test for duplicates.</td></tr><tr><td><code>dbt/warehouse/dbt_project.yml</code></td><td>warehouse</td><td>Settings, including the <code>training</code> block you added.</td></tr><tr><td><code>dbt/warehouse/models/training/lake/training_lake_population.sql</code></td><td>warehouse</td><td>ClickHouse view over the Parquet file.</td></tr><tr><td><code>dbt/warehouse/models/training/gold/training_fct_population_district_year.sql</code></td><td>warehouse</td><td>Gold table for dashboards.</td></tr><tr><td><code>dbt/warehouse/models/training/_training__models.yml</code></td><td>warehouse</td><td>Generic tests for the gold table.</td></tr><tr><td><code>dbt/warehouse/tests/assert_training_population_matches_production.sql</code></td><td>warehouse</td><td>Comparison with the production figures.</td></tr></tbody></table></div>
+<h3 id="when-you-finish">When you finish</h3>
+<ul><li><p><strong>Resume the live pipeline.</strong> Open Prefect, go to Work Pools, open <code>hmis-process-pool</code> and switch it back on.</p></li><li><p><strong>The training models can stay.</strong> They are small, and the scheduled <code>dbt build</code> will simply build them as well. If the project must stay clean, exclude them from the scheduled build.</p></li><li><p><strong>Keep your backups</strong> (<code>dbt_project.yml.bak</code> in both projects) until you have finished the whole guide, then you can delete them.</p></li><li><p><strong>Try it again on another dataset.</strong> The same eight moves work for any DHIS2 data set: read it, unnest it, name the columns, fill the gaps, type the values, remove duplicates, add names, then summarise it for a dashboard.</p></li></ul>
+
+<div class="foot">HICA South-to-South regional learning exchange &middot; dbt data modelling guide</div>
+</main></div><script>
+(function(){
+  var m=document.querySelector('main'),nav=document.querySelector('nav .list');
+  m.querySelectorAll('pre').forEach(function(p){
+    var b=document.createElement('button');b.className='cp';b.type='button';b.textContent='Copy';
+    b.onclick=function(){var t=p.querySelector('code').innerText;
+      var done=function(){b.textContent='Copied';setTimeout(function(){b.textContent='Copy'},1400)};
+      if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(done,function(){fallback(t,done)})}else{fallback(t,done)}};
+    p.appendChild(b)});
+  function fallback(t,done){var a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();try{document.execCommand('copy')}catch(e){}document.body.removeChild(a);done()}
+  var hs=m.querySelectorAll('h2,h3'),links=[];
+  hs.forEach(function(h){var a=document.createElement('a');a.href='#'+h.id;a.textContent=h.textContent;a.className=h.tagName.toLowerCase();nav.appendChild(a);links.push([h,a])});
+  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){links.forEach(function(l){l[1].classList.toggle('on',l[0]===e.target)})}})},{rootMargin:'-10% 0px -80% 0px'});
+  hs.forEach(function(h){io.observe(h)});
+})();
+</script></body></html>
